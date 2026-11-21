@@ -5367,7 +5367,9 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
 (function () {
   if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
   window.addEventListener('load', function () {
-    navigator.serviceWorker.register('sw.js').then(function () {
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (reg) {
+      // look for a new version whenever the app comes back to the front
+      document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') reg.update().catch(function () { }); });
       return navigator.serviceWorker.ready;
     }).then(function () {
       // Fetch every font once while online so the service worker keeps them for offline use.
@@ -5381,6 +5383,19 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     }).catch(function () { });
   });
 
+  // a new version took over in the background: offer to switch to it
+  var hadController = !!(navigator.serviceWorker && navigator.serviceWorker.controller);
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (!hadController) { hadController = true; return; }
+    if (document.getElementById('updBar')) return;
+    var bar = document.createElement('div');
+    bar.id = 'updBar';
+    bar.setAttribute('role', 'status');
+    bar.style.cssText = 'position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:9999;background:#16181D;color:#fff;border:1px solid #3A404B;border-radius:12px;padding:10px 12px 10px 16px;display:flex;gap:12px;align-items:center;font:600 15px Inter,system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.4)';
+    bar.innerHTML = '<span>A new version of PrintSketch is ready.</span><button style="min-height:40px;padding:0 16px;border:0;border-radius:8px;background:#F5A04A;color:#16181D;font-weight:700;cursor:pointer">Update now</button>';
+    bar.querySelector('button').onclick = function () { location.reload(); };
+    document.body.appendChild(bar);
+  });
   var deferred = null;
   function installBtn() {
     var b = document.getElementById('installBtn');

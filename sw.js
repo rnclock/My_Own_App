@@ -1,5 +1,5 @@
 /* PrintSketch service worker: lets the app open and work with no internet. */
-var VERSION = '221ce500e4';
+var VERSION = 'b3cb2d0716';
 var APP = 'printsketch-app-' + VERSION;
 var FONTS = 'printsketch-fonts-v1';
 var CORE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
@@ -15,7 +15,8 @@ self.addEventListener('activate', function (e) {
 });
 
 function networkFirst(req, cacheName) {
-  return fetch(req).then(function (res) {
+  // always ask the server (skip the browser's 10-minute page cache) so a new version shows up right away
+  return fetch(req, { cache: 'no-cache' }).then(function (res) {
     if (res && res.ok) { var copy = res.clone(); caches.open(cacheName).then(function (c) { c.put(req, copy); }); }
     return res;
   }).catch(function () {
