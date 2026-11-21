@@ -891,6 +891,62 @@ var G = (function () {
   }
 
 
+  /* ---------------- Strokes and surface patterns ---------------- */
+  function capsule(a, b, r) { // rectangle along a segment (round ends added separately)
+    var dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1, nx = -dy / L * r, ny = dx / L * r;
+    return [[a[0] + nx, a[1] + ny], [b[0] + nx, b[1] + ny], [b[0] - nx, b[1] - ny], [a[0] - nx, a[1] - ny]];
+  }
+  function rasterRegions(polys, x0, y0, x1, y1, px) {
+    // pad by 2 empty pixels so outlines never touch the image edge; clip the pattern to the area after filling
+    var w0 = Math.max(2, Math.ceil((x1 - x0) / px)), h0 = Math.max(2, Math.ceil((y1 - y0) / px)), w = w0 + 4, h = h0 + 4, mask = new Uint8Array(w * h);
+    var ox = x0 - 2 * px, oy = y0 - 2 * px;
+    polys.forEach(function (pg) { scanFill(mask, w, h, [pg], ox, oy, px, 1); });
+    for (var yy = 0; yy < h; yy++) for (var xx = 0; xx < w; xx++) if (xx < 2 || yy < 2 || xx >= w - 2 || yy >= h - 2) mask[yy * w + xx] = 0;
+    x0 = ox; y0 = oy;
+    var regs = traceMask(mask, w, h, { tol: 0.6, minArea: 3 });
+    var f = function (p) { return [x0 + (p[0] + 0.5) * px, y0 + (p[1] + 0.5) * px]; };
+    return regs.map(function (r) { return { outer: r.outer.map(f), holes: r.holes.map(function (hh) { return hh.map(f); }) }; });
+  }
+  /* an open line (polyline) with a width -> regions */
+  function strokeRegions(pts, width, closed) {
+    var r = Math.max(0.1, width / 2), polys = [], n = pts.length;
+    if (n < 2) return [];
+    for (var i = 0; i + 1 < n + (closed ? 1 : 0); i++) polys.push(capsule(pts[i % n], pts[(i + 1) % n], r));
+    pts.forEach(function (p) { polys.push(circlePts(p[0], p[1], r, 20)); });
+    var b = bbox([pts]), px = Math.max(0.03, Math.min(0.12, (Math.max(b.w, b.h) + 2 * r) / 1500));
+    return rasterRegions(polys, b.minX - r - 3 * px, b.minY - r - 3 * px, b.maxX + r + 3 * px, b.maxY + r + 3 * px, px);
+  }
+  /* repeating surface patterns over a W x H area centered on 0,0 */
+  var PATTERNS = ['crisscross', 'squares', 'waves', 'stripes', 'zigzag', 'dots', 'honeycomb'];
+  function patternRegions(type, W, H, cell, line) {
+    cell = Math.max(1, cell); var r = Math.max(0.15, line / 2), polys = [], X = W / 2 + cell, Y = H / 2 + cell, i, k, x, y;
+    var seg = function (a, b) { polys.push(capsule(a, b, r)); };
+    var path = function (pts) { for (var j = 0; j + 1 < pts.length; j++) seg(pts[j], pts[j + 1]); pts.forEach(function (p) { polys.push(circlePts(p[0], p[1], r, 10)); }); };
+    var D = Math.hypot(X, Y) + cell;
+    if (type === 'crisscross') {
+      for (k = -D; k <= D; k += cell) { seg([k - D, -D], [k + D, D]); seg([k - D, D], [k + D, -D]); }
+    } else if (type === 'squares') {
+      for (x = -X; x <= X; x += cell) seg([x, -Y], [x, Y]);
+      for (y = -Y; y <= Y; y += cell) seg([-X, y], [X, y]);
+    } else if (type === 'stripes') {
+      for (y = -Y; y <= Y; y += cell) seg([-X, y], [X, y]);
+    } else if (type === 'waves') {
+      for (y = -Y; y <= Y; y += cell * 0.8) { var pw = []; for (x = -X; x <= X; x += cell / 12) pw.push([x, y + Math.sin(x / cell * Math.PI * 2) * cell * 0.2]); path(pw); }
+    } else if (type === 'zigzag') {
+      for (y = -Y; y <= Y; y += cell * 0.7) { var pz = []; for (x = -X, i = 0; x <= X + cell; x += cell / 2, i++) pz.push([x, y + (i % 2 ? cell * 0.25 : -cell * 0.25)]); path(pz); }
+    } else if (type === 'dots') {
+      for (y = -Y, i = 0; y <= Y; y += cell * 0.866, i++) for (x = -X + (i % 2 ? cell / 2 : 0); x <= X; x += cell) polys.push(circlePts(x, y, Math.max(r * 1.6, cell * 0.22), 24));
+    } else if (type === 'honeycomb') {
+      var R = cell / Math.sqrt(3), hx = cell, hy = R * 1.5;
+      for (y = -Y - hy, i = 0; y <= Y + hy; y += hy, i++) for (x = -X - hx + (i % 2 ? hx / 2 : 0); x <= X + hx; x += hx) {
+        var hex = []; for (k = 0; k < 6; k++) { var a = Math.PI / 6 + k * Math.PI / 3; hex.push([x + R * Math.cos(a), y + R * Math.sin(a)]); }
+        for (k = 0; k < 6; k++) seg(hex[k], hex[(k + 1) % 6]);
+        hex.forEach(function (p) { polys.push(circlePts(p[0], p[1], r, 10)); });
+      }
+    }
+    var px = Math.max(0.04, Math.min(0.15, Math.max(W, H) / 1200));
+    return rasterRegions(polys, -W / 2, -H / 2, W / 2, H / 2, px);
+  }
   /* ---------------- Layered parts: shapes with their own bottom/top heights ---------------- */
   function ringsCross(a, b) { return polysIntersect(a, b); }
   function ringInside(inner, outer) { return inner.every(function (p) { return pointInPoly(p[0], p[1], outer); }) && !ringsCross(inner, outer); }
@@ -1797,12 +1853,43 @@ var G = (function () {
     }
   }
   /* F: frame. regs: letter regions (frame a, b). wrapR: wrap radius (0 = straight). Returns null if it can't. */
+  /* join corners that are the same point: exact x, y (they were snapped) and z within a hair, with no rounding edges to fall across */
+  function weldFrame(tris, cols) {
+    var m = new Mesh(), map = new Map(), fc = [];
+    var C = 1e-4, tol = 6e-5;
+    var vid = function (x, y, z) {
+      var cx = Math.floor(x / C), cy = Math.floor(y / C);
+      for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) {
+        var l = map.get((cx + dx) + ',' + (cy + dy)); if (!l) continue;
+        for (var i = 0; i < l.length; i++) { var e = l[i]; if (Math.abs(e[0] - x) < tol && Math.abs(e[1] - y) < tol && Math.abs(e[2] - z) < tol) return e[3]; }
+      }
+      var id = m.addV(x, y, z), k = cx + ',' + cy, l2 = map.get(k); if (!l2) map.set(k, l2 = []); l2.push([x, y, z, id]); return id;
+    };
+    for (var t = 0; t < tris.length; t += 9) {
+      var a = vid(tris[t], tris[t + 1], tris[t + 2]), b = vid(tris[t + 3], tris[t + 4], tris[t + 5]), c = vid(tris[t + 6], tris[t + 7], tris[t + 8]);
+      if (a !== b && b !== c && a !== c) { m.tri(a, b, c); if (cols) fc.push(cols[t / 9] || 0); }
+    }
+    if (cols && fc.some(function (x) { return x; })) m.fc = fc;
+    return m;
+  }
+  function closedByIndex(m) { var E = new Map(); for (var q = 0; q < m.f.length; q += 3) for (var k = 0; k < 3; k++) { var a = m.f[q + k], b = m.f[q + (k + 1) % 3], key = a + '_' + b; E.set(key, (E.get(key) || 0) + 1); } var bad = 0; E.forEach(function (n, key) { var p2 = key.split('_'); if ((E.get(p2[1] + '_' + p2[0]) || 0) !== n) bad++; }); return { ok: bad === 0, badEdges: bad }; }
   function imprintInlay(target, F, regs, depth, mode, wrapR) {
-    var mapA = wrapR ? function (a) { var ph = Math.max(-Math.PI * 0.45, Math.min(Math.PI * 0.45, a / wrapR)); return wrapR * Math.sin(ph); } : function (a) { return a; };
-    var dens = function (pts) { var o = []; for (var i = 0; i < pts.length; i++) { var a = pts[i], b = pts[(i + 1) % pts.length], k = wrapR ? Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.5)) : 1; for (var j = 0; j < k; j++) o.push([mapA(a[0] + (b[0] - a[0]) * j / k), a[1] + (b[1] - a[1]) * j / k]); } return o; };
+    if (wrapR) { // bend the outlines around the curve once, then redraw them cleanly so the stamping sees tidy edges
+      var mA = function (a) { var ph = Math.max(-Math.PI * 0.45, Math.min(Math.PI * 0.45, a / wrapR)); return wrapR * Math.sin(ph); };
+      var bend = function (ring) { var o = []; for (var i = 0; i < ring.length; i++) { var a = ring[i], b = ring[(i + 1) % ring.length], k = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.4)); for (var j = 0; j < k; j++) o.push([mA(a[0] + (b[0] - a[0]) * j / k), a[1] + (b[1] - a[1]) * j / k]); } return o; };
+      var bent = regs.map(function (r) { return { outer: bend(r.outer), holes: (r.holes || []).map(bend) }; });
+      var bb0 = bbox(bent.map(function (r) { return r.outer; })), px0 = Math.max(0.03, Math.min(0.08, Math.max(bb0.w, bb0.h) / 1500));
+      var w0 = Math.ceil(bb0.w / px0) + 8, h0 = Math.ceil(bb0.h / px0) + 8, ox0 = bb0.minX - 4 * px0, oy0 = bb0.minY - 4 * px0, mk = new Uint8Array(w0 * h0);
+      bent.forEach(function (r) { scanFill(mk, w0, h0, [r.outer].concat(r.holes), ox0, oy0, px0, 1); });
+      var fm0 = function (p) { return [ox0 + (p[0] + 0.5) * px0, oy0 + (p[1] + 0.5) * px0]; };
+      regs = traceMask(mk, w0, h0, { tol: 0.6, minArea: 3 }).map(function (r) { return { outer: r.outer.map(fm0), holes: r.holes.map(function (hh) { return hh.map(fm0); }) }; });
+    }
+    var mapA = function (a) { return a; };
+    var mapUnused = wrapR ? function (a) { var ph = Math.max(-Math.PI * 0.45, Math.min(Math.PI * 0.45, a / wrapR)); return wrapR * Math.sin(ph); } : function (a) { return a; };
+    var dens = function (pts) { var o = []; for (var i = 0; i < pts.length; i++) { var a = pts[i], b = pts[(i + 1) % pts.length], k = wrapR ? Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 1.5)) : 1; for (var j = 0; j < k; j++) o.push([mapA(a[0] + (b[0] - a[0]) * j / k), a[1] + (b[1] - a[1]) * j / k]); } return o; };
     var segs = [];
     regs.forEach(function (r) {
-      [ensureCCW(r.outer)].concat((r.holes || []).map(ensureCW)).forEach(function (ring) { var R2 = dens(ring); for (var i = 0; i < R2.length; i++) { var a = R2[i], b = R2[(i + 1) % R2.length]; if (a[0] !== b[0] || a[1] !== b[1]) segs.push([a[0], a[1], b[0], b[1]]); } });
+      [ensureCCW(r.outer)].concat((r.holes || []).map(ensureCW)).forEach(function (ring) { var R2 = dens(ring); if (wrapR) R2 = cleanPoly(R2, 1e-6); for (var i = 0; i < R2.length; i++) { var a = R2[i], b = R2[(i + 1) % R2.length]; if (a[0] !== b[0] || a[1] !== b[1]) segs.push([a[0], a[1], b[0], b[1]]); } });
     });
     var root = bsp2(segs); if (!root) return null;
     var bx = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }; segs.forEach(function (s) { bx.x0 = Math.min(bx.x0, s[0], s[2]); bx.x1 = Math.max(bx.x1, s[0], s[2]); bx.y0 = Math.min(bx.y0, s[1], s[3]); bx.y1 = Math.max(bx.y1, s[1], s[3]); });
@@ -1859,6 +1946,9 @@ var G = (function () {
       if (cz < topAt(cx, cy) - Math.max(0.6, depth * 1.5)) return; // hidden behind the front surface
       var I = [], O = []; classify2(root, T, I, O);
       if (!I.length) return;
+      // snap corners to a 0.01 micron grid so the same point always has exactly the same coordinates
+      var snapPg = function (pg) { var out = []; pg.forEach(function (pt) { var q = null; for (var tv = 0; tv < 3; tv++) if (Math.abs(pt[0] - T[tv][0]) < 1e-6 && Math.abs(pt[1] - T[tv][1]) < 1e-6) q = T[tv]; if (!q) q = [Math.round(pt[0] * 1e5) / 1e5, Math.round(pt[1] * 1e5) / 1e5, pt[2]]; var l = out[out.length - 1]; if (!l || l[0] !== q[0] || l[1] !== q[1]) out.push(q); }); if (out.length > 1 && out[0][0] === out[out.length - 1][0] && out[0][1] === out[out.length - 1][1]) out.pop(); return out; };
+      I = I.map(snapPg).filter(function (pg) { return pg.length >= 3; }); O = O.map(snapPg).filter(function (pg) { return pg.length >= 3; });
       var col = loc.fc ? (loc.fc[q2 / 3] || 0) : 0; I.forEach(function (pg) { pg.c = col; }); O.forEach(function (pg) { pg.c = col; });
       used[q2] = 1; ins = ins.concat(I); outs = outs.concat(O);
       // remember points that landed on this triangle's edges, so the untouched neighbour can be split to match
@@ -1867,7 +1957,7 @@ var G = (function () {
         for (var e2 = 0; e2 < 3; e2++) {
           var A = T[e2], B = T[(e2 + 1) % 3], ex = B[0] - A[0], ey = B[1] - A[1], ez = B[2] - A[2], L2 = ex * ex + ey * ey + ez * ez; if (!L2) continue;
           var tt = ((pt[0] - A[0]) * ex + (pt[1] - A[1]) * ey + (pt[2] - A[2]) * ez) / L2; if (tt <= 1e-7 || tt >= 1 - 1e-7) continue;
-          var dx = A[0] + ex * tt - pt[0], dy = A[1] + ey * tt - pt[1], dz = A[2] + ez * tt - pt[2]; if (dx * dx + dy * dy + dz * dz > 1e-12) continue;
+          var dx = A[0] + ex * tt - pt[0], dy = A[1] + ey * tt - pt[1], dz = A[2] + ez * tt - pt[2]; if (dx * dx + dy * dy + dz * dz > 1e-9) continue;
           var i3 = ids[e2], j3 = ids[(e2 + 1) % 3], kk2 = Math.min(i3, j3) + '_' + Math.max(i3, j3), lst = onEdge.get(kk2);
           if (!lst) onEdge.set(kk2, lst = []); lst.push(pt);
         }
@@ -1883,7 +1973,7 @@ var G = (function () {
         for (var i = 0; i < pg.length; i++) {
           var A = pg[i], B = pg[(i + 1) % pg.length], ex = B[0] - A[0], ey = B[1] - A[1], L2 = ex * ex + ey * ey; out.push(A); if (L2 < 1e-14) continue;
           var hits = [], x0 = Math.floor(Math.min(A[0], B[0]) / G2c), x1 = Math.floor(Math.max(A[0], B[0]) / G2c), y0 = Math.floor(Math.min(A[1], B[1]) / G2c), y1 = Math.floor(Math.max(A[1], B[1]) / G2c);
-          for (var gx = x0; gx <= x1; gx++) for (var gy = y0; gy <= y1; gy++) { var l = grid.get(gx + ',' + gy); if (!l) continue; l.forEach(function (pt) { var tt = ((pt[0] - A[0]) * ex + (pt[1] - A[1]) * ey) / L2; if (tt <= 1e-9 || tt >= 1 - 1e-9) return; var cr = (pt[0] - A[0]) * ey - (pt[1] - A[1]) * ex; if (cr * cr / L2 > 1e-14) return; hits.push([tt, [pt[0], pt[1], A[2] + (B[2] - A[2]) * tt]]); }); }
+          for (var gx = x0; gx <= x1; gx++) for (var gy = y0; gy <= y1; gy++) { var l = grid.get(gx + ',' + gy); if (!l) continue; l.forEach(function (pt) { var tt = ((pt[0] - A[0]) * ex + (pt[1] - A[1]) * ey) / L2; if (tt <= 1e-9 || tt >= 1 - 1e-9) return; var cr = (pt[0] - A[0]) * ey - (pt[1] - A[1]) * ex; if (cr * cr / L2 > 1e-9) return; hits.push([tt, [pt[0], pt[1], A[2] + (B[2] - A[2]) * tt]]); }); }
           hits.sort(function (a, b) { return a[0] - b[0]; }).forEach(function (h) { out.push(h[1]); });
         }
         out.c = pg.c;
@@ -1938,7 +2028,7 @@ var G = (function () {
         quad(ps, pd, qd, qs, inl); // inlay side wall, facing out
       });
     }
-    var tm = fromFrame(indexMesh(tris, loc.fc ? tcols : null), F), im = fromFrame(indexMesh(inl), F);
+    var tm = fromFrame(weldFrame(tris, loc.fc ? tcols : null), F), im = fromFrame(weldFrame(inl, null), F);
     if (signedVolume(im) < 0) meshFlipWinding(im);
     return { target: tm, inlay: im };
   }
@@ -2214,11 +2304,11 @@ var G = (function () {
 
   return {
     earcut: earcut, polyArea: polyArea, ensureCCW: ensureCCW, cleanPoly: cleanPoly, pointInPoly: pointInPoly, bbox: bbox,
-    smoothOutline: smoothOutline, simplifyClosed: simplifyClosed, selfIntersects: selfIntersects, polysIntersect: polysIntersect,
+    smoothOutline: smoothOutline, simplifyClosed: simplifyClosed, rdp: rdp, selfIntersects: selfIntersects, polysIntersect: polysIntersect,
     rectPts: rectPts, circlePts: circlePts, roundRectPts: roundRectPts, transformPts: transformPts,
     Mesh: Mesh, extrude: extrude, box: box, xCylinder: xCylinder, checkClosed: checkClosed, signedVolume: signedVolume,
     plainPart: plainPart, inlayParts: inlayParts, hingeBox: hingeBox, hingeBoxParams: hingeBoxParams, lidRotate: lidRotate,
-    traceMask: traceMask, unionRegions: unionRegions, layeredPart: layeredPart, meshAndPrism: meshAndPrism, clipMeshAxis: clipMeshAxis, cutRegion: cutRegion, connFrame: connFrame, placeMesh: placeMesh, hingeParts: hingeParts, dovetailShapes: dovetailShapes, rayMesh: rayMesh, surfaceFrame: surfaceFrame, surfaceInlay: surfaceInlay, surfaceInlayWrap: surfaceInlayWrap, localCut: localCut, projectedInlay: projectedInlay, imprintInlay: imprintInlay, decodePaint: decodePaint, encodePaint: encodePaint, subdivideX: subdivideX, toFrame: toFrame, fromFrame: fromFrame, parseSTL: parseSTL, parse3MF: parse3MF, readZip: readZip, silhouette: silhouette, sliceMesh: sliceMesh, clipMesh: clipMesh, cutMesh: cutMesh, meshFlipWinding: meshFlipWinding, insetRegion: insetRegion, insetLevels: insetLevels, outsetRegion: outsetRegion, threadedJar: threadedJar, lathe: lathe, loft: loft, resampleRing: resampleRing, alignRing: alignRing, cupSolid: cupSolid, edgeSlabs: edgeSlabs, isConvex: isConvex, stlBinary: stlBinary, threeMF: threeMF, zip: zip, crc32: crc32
+    traceMask: traceMask, strokeRegions: strokeRegions, patternRegions: patternRegions, PATTERNS: PATTERNS, unionRegions: unionRegions, layeredPart: layeredPart, meshAndPrism: meshAndPrism, clipMeshAxis: clipMeshAxis, cutRegion: cutRegion, connFrame: connFrame, placeMesh: placeMesh, hingeParts: hingeParts, dovetailShapes: dovetailShapes, rayMesh: rayMesh, surfaceFrame: surfaceFrame, surfaceInlay: surfaceInlay, surfaceInlayWrap: surfaceInlayWrap, localCut: localCut, projectedInlay: projectedInlay, imprintInlay: imprintInlay, closedByIndex: closedByIndex, decodePaint: decodePaint, encodePaint: encodePaint, subdivideX: subdivideX, toFrame: toFrame, fromFrame: fromFrame, parseSTL: parseSTL, parse3MF: parse3MF, readZip: readZip, silhouette: silhouette, sliceMesh: sliceMesh, clipMesh: clipMesh, cutMesh: cutMesh, meshFlipWinding: meshFlipWinding, insetRegion: insetRegion, insetLevels: insetLevels, outsetRegion: outsetRegion, threadedJar: threadedJar, lathe: lathe, loft: loft, resampleRing: resampleRing, alignRing: alignRing, cupSolid: cupSolid, edgeSlabs: edgeSlabs, isConvex: isConvex, stlBinary: stlBinary, threeMF: threeMF, zip: zip, crc32: crc32
   };
 })();
 if (typeof module !== 'undefined') module.exports = G;
@@ -2479,20 +2569,20 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
 
   /* ---------------- state ---------------- */
   var S = {
-    plates: [{ id: 1, name: 'Main plate' }], plate: 1, multi: [], multiMode: false, groupNames: {}, tab: 'draw', view3d: false, tool: 'pen', fingerDraw: false, T: 4, lock: true, wall: 2, floorT: 2, stand: { t: 5, taper: 100 }, loft: { hollow: false, wall: 2, floor: 2 }, lastSave: {}, sphere: { d: 40, hollow: false, wall: 2, flat: 1 }, snap: true, rep: { mode: 'row', n: 4, dx: 15, dy: 15, cols: 3, rows: 2, ang: 360 }, spinAxis: 'left', jar: { d: 50, H: 60, wall: 2.4, pitch: 3, clr: 0.4 }, screw: { M: 3, head: 'csk', nut: false }, lid: { T: 2, lipH: 4, clr: 0.2, click: false }, fil: 1,
+    plates: [{ id: 1, name: 'Main plate' }], plate: 1, multi: [], multiMode: false, groupNames: {}, tab: 'draw', view3d: false, tool: 'pen', fingerDraw: false, T: 4, lock: true, wall: 2, floorT: 2, openLine: false, lineW: 1.2, stand: { t: 5, taper: 100 }, loft: { hollow: false, wall: 2, floor: 2 }, lastSave: {}, sphere: { d: 40, hollow: false, wall: 2, flat: 1 }, snap: true, rep: { mode: 'row', n: 4, dx: 15, dy: 15, cols: 3, rows: 2, ang: 360 }, spinAxis: 'left', jar: { d: 50, H: 60, wall: 2.4, pitch: 3, clr: 0.4 }, screw: { M: 3, head: 'csk', nut: false }, lid: { T: 2, lipH: 4, clr: 0.2, click: false }, fil: 1,
     filaments: ['#F5A04A', '#EDEDED', '#2B2B2B', '#3B7DD8'],
     shapes: [], sel: null, nextId: 1,
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.5';
+  var VERSION = '1.6';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
   }
   function applySaved(d) {
     try {
-      if (d) { S.shapes = (d.shapes || []).map(function (x) { if (x.h == null) x.h = d.T || 4; if (x.z == null) x.z = 0; if (x.through == null) x.through = true; return x; }); S.nextId = d.nextId || 1; S.T = d.T || 4; Object.assign(S.inlay, d.inlay || {}); Object.assign(S.hinge, d.hinge || {}); S.fingerDraw = !!d.fingerDraw; if (d.snap === false) S.snap = false; ['lid', 'screw', 'jar', 'rep', 'stand', 'loft'].forEach(function (k) { if (d[k]) Object.assign(S[k], d[k]); }); S.hinge.angle = 0; if (S.tab === 'hinge') S.tab = 'draw'; if (d.lock != null) S.lock = d.lock; if (d.wall) S.wall = d.wall; if (d.floorT) S.floorT = d.floorT; if (d.projectName) S.projectName = d.projectName; if (Array.isArray(d.filaments) && d.filaments.length) S.filaments = d.filaments; if (d.fil) S.fil = d.fil; if (Array.isArray(d.plates) && d.plates.length) { S.plates = d.plates; S.plate = d.plate || d.plates[0].id; } if (d.groupNames) S.groupNames = d.groupNames; }
+      if (d) { S.shapes = (d.shapes || []).map(function (x) { if (x.h == null) x.h = d.T || 4; if (x.z == null) x.z = 0; if (x.through == null) x.through = true; return x; }); S.nextId = d.nextId || 1; S.T = d.T || 4; Object.assign(S.inlay, d.inlay || {}); Object.assign(S.hinge, d.hinge || {}); S.fingerDraw = !!d.fingerDraw; if (d.snap === false) S.snap = false; if (d.openLine) S.openLine = true; if (d.lineW) S.lineW = d.lineW; ['lid', 'screw', 'jar', 'rep', 'stand', 'loft'].forEach(function (k) { if (d[k]) Object.assign(S[k], d[k]); }); S.hinge.angle = 0; if (S.tab === 'hinge') S.tab = 'draw'; if (d.lock != null) S.lock = d.lock; if (d.wall) S.wall = d.wall; if (d.floorT) S.floorT = d.floorT; if (d.projectName) S.projectName = d.projectName; if (Array.isArray(d.filaments) && d.filaments.length) S.filaments = d.filaments; if (d.fil) S.fil = d.fil; if (Array.isArray(d.plates) && d.plates.length) { S.plates = d.plates; S.plate = d.plate || d.plates[0].id; } if (d.groupNames) S.groupNames = d.groupNames; }
     } catch (e) { }
   }
   var saveTimer = null, storeWarned = false;
@@ -2517,7 +2607,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   function writeStore() {
     saveTimer = null;
     var data, stamp = Date.now();
-    try { data = JSON.stringify({ shapes: S.shapes.map(cleanShape), nextId: S.nextId, T: S.T, inlay: S.inlay, hinge: S.hinge, fingerDraw: S.fingerDraw, lock: S.lock, wall: S.wall, floorT: S.floorT, projectName: S.projectName, filaments: S.filaments, fil: S.fil, plates: S.plates, plate: S.plate, groupNames: S.groupNames, snap: S.snap, stand: S.stand, loft: S.loft, lid: S.lid, screw: S.screw, jar: S.jar, rep: S.rep }); } catch (e) { return; }
+    try { data = JSON.stringify({ shapes: S.shapes.map(cleanShape), nextId: S.nextId, T: S.T, inlay: S.inlay, hinge: S.hinge, fingerDraw: S.fingerDraw, lock: S.lock, wall: S.wall, floorT: S.floorT, projectName: S.projectName, filaments: S.filaments, fil: S.fil, plates: S.plates, plate: S.plate, groupNames: S.groupNames, snap: S.snap, openLine: S.openLine, lineW: S.lineW, stand: S.stand, loft: S.loft, lid: S.lid, screw: S.screw, jar: S.jar, rep: S.rep }); } catch (e) { return; }
     try {
       localStorage.setItem('printsketch-v1', data); localStorage.removeItem('printsketch-big'); storeWarned = false;
       idbPut(null).catch(function () { });
@@ -2577,7 +2667,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   }
   function shapeLabel(s) {
     if (s.kind === 'conn') return connLabel(s);
-    if (s.kind === 'decal') { var tg = shapeById(s.target); return (s.name || ('Inlay "' + (s.src === 'text' ? (s.text || '') : 'drawing') + '"')) + ' on ' + (tg ? (tg.name || ('object ' + tg.id)) : 'nothing'); }
+    if (s.kind === 'decal') { var tg = shapeById(s.target); return (s.name || (s.src === 'pattern' ? 'Pattern (' + decv(s, 'pat') + ')' : 'Inlay "' + (s.src === 'text' ? (s.text || '') : 'drawing') + '"')) + ' on ' + (tg ? (tg.name || ('object ' + tg.id)) : 'nothing'); }
     var b = shapeBox(s), dims = ' · ' + Math.round(b.w) + '×' + Math.round(b.h) + ' mm';
     if (s.name) return s.name + dims;
     if (s.kind === 'screw') return (s.name || ('M' + shp(s, 'M') + ' screw hole ' + s.id));
@@ -2998,12 +3088,12 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     if (g.type === 'draw') {
       var len = 0; for (var i = 1; i < g.pts.length; i++) len += Math.hypot(g.pts[i][0] - g.pts[i - 1][0], g.pts[i][1] - g.pts[i - 1][1]);
       if (len * V2.s < 10) { var h = (lastShift || S.multiMode) ? hitShape(w) : hitCycle(w); if (h || !(lastShift || S.multiMode)) selectShape(h, lastShift || S.multiMode); gesture = null; renderPanel(); return; }
-      if (g.pts.length >= 4) { addShape('free', g.pts, { smooth: 50 }); changed(true); }
+      if (g.pts.length >= 4) { if (S.openLine) { snapshot(); addStroke(G.rdp(g.pts, Math.max(0.15, 1.5 / V2.s)), false); } else addShape('free', g.pts, { smooth: 50 }); changed(true); }
     } else if ((g.type === 'rect' || g.type === 'circle') && g.b) {
       var pts = dragShape(g), bb = G.bbox([pts]);
       if (bb.w > 1 && bb.h > 1) { addShape(g.type, pts); changed(true); }
     } else if (g.type === 'tap') {
-      if (polyPts.length >= 3 && Math.hypot(w[0] - polyPts[0][0], w[1] - polyPts[0][1]) * V2.s < 22) finishPoly();
+      if (polyPts.length >= 3 && Math.hypot(w[0] - polyPts[0][0], w[1] - polyPts[0][1]) * V2.s < 22) finishPoly(true);
       else { polyPts.push(w); renderPanel(); }
     } else if (g.type === 'measure') {
       measure = { a: g.a, b: measureSnap(w) }; if (Math.hypot(measure.b[0] - measure.a[0], measure.b[1] - measure.a[1]) * V2.s < 6) measure = null; renderHud();
@@ -3016,7 +3106,17 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     else if (g.type === 'moveInlay' || g.type === 'scaleInlay') { persist(); renderPanel(); update3dIfNeeded(); }
     gesture = null;
   }
-  function finishPoly() {
+  function addStroke(pts, closed) {
+    var regs = G.strokeRegions(pts, S.lineW, closed);
+    if (!regs.length) return false;
+    var gid = regs.length > 1 ? Date.now() % 1000000000 : null, ids = [];
+    regs.forEach(function (r) { var s = { id: S.nextId++, kind: 'line', raw: r.outer, holes: r.holes, smooth: 0, role: 'solid', z: 0, h: S.T, through: true, fil: S.fil || 1 }; if (gid) s.grp = gid; else s.name = 'Line'; addObj(s); ids.push(s.id); });
+    S.sel = ids[0]; S.multi = ids.length > 1 ? ids : [];
+    if (gid) S.groupNames[gid] = 'Line';
+    return true;
+  }
+  function finishPoly(closing) {
+    if (S.openLine && polyPts.length >= 2) { snapshot(); addStroke(polyPts.slice(), !!closing); polyPts = []; hoverW = null; changed(true); return; }
     if (polyPts.length >= 3) { addShape('line', polyPts.slice()); polyPts = []; hoverW = null; changed(true); }
     else { polyPts = []; renderPanel(); render2d(); }
   }
@@ -3330,7 +3430,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   var gmCache = new Map();
   function groupMesh(gr) {
     var key = S.filaments.length + '/' + gr.mem.concat(gr.cuts).map(function (s) { return [s.edgeT, s.edgeTs, s.edgeB, s.edgeBs, s.M, s.head, s.nut, s.id, s.fil, S.shapes.indexOf(s), s.kind, s.role, s.z, s.h, s.through, s.smooth, s.raw.length, s.raw[0], s.raw[s.raw.length >> 1], s.mesh ? s.mesh.v.length + ':' + s.mesh.v[0] + ':' + s.mesh.v[s.mesh.v.length - 1] : ''].join('|'); }).join('#');
-    key += '@' + gr.mem.map(function (m) { return JSON.stringify(decalsOn(m.id).map(function (d) { return [d.id, d.src, d.text, d.font, d.regs ? d.regs.length : 0, d.F, d.w, d.rot, d.mode, d.layers, d.fil, d.wrap]; })); }).join(',');
+    key += '@' + gr.mem.map(function (m) { return JSON.stringify(decalsOn(m.id).map(function (d) { return [d.id, d.src, d.text, d.font, d.regs ? d.regs.length : 0, d.F, d.w, d.rot, d.mode, d.layers, d.fil, d.wrap, d.pat, d.ph, d.cell, d.line]; })); }).join(',');
     key += '&' + JSON.stringify(S.shapes.filter(function (c) { return c.kind === 'conn' && gr.mem.some(function (m) { return m.id === c.a || m.id === c.b; }); }).map(cleanShape));
     if (gmCache.has(key)) { var hit = gmCache.get(key); (hit.decalMeshes || []).forEach(function (dm) { var d = shapeById(dm.id); if (d) d._mesh = dm.mesh; }); return hit; }
     var res = buildGroupMesh(gr);
@@ -3671,7 +3771,16 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     });
     return fils.sort().map(function (f) { return { fil: f, mesh: by[f] }; });
   }
+  var patCache = new Map();
+  var DEC_DEF = { pat: 'crisscross', ph: 30, cell: 5, line: 0.8 };
+  function decv(d, k) { return d[k] != null ? d[k] : DEC_DEF[k]; }
   function decalRegions(d) {
+    if (d.src === 'pattern') {
+      var key = [decv(d, 'pat'), d.w || 40, decv(d, 'ph'), decv(d, 'cell'), decv(d, 'line')].join('|'), regs = patCache.get(key);
+      if (!regs) { regs = G.patternRegions(decv(d, 'pat'), d.w || 40, decv(d, 'ph'), decv(d, 'cell'), decv(d, 'line')); if (patCache.size > 20) patCache.clear(); patCache.set(key, regs); }
+      var a0 = (d.rot || 0) * Math.PI / 180, c0 = Math.cos(a0), s0 = Math.sin(a0), fr = function (p) { return [p[0] * c0 - p[1] * s0, p[0] * s0 + p[1] * c0]; };
+      return regs.map(function (r) { return { outer: r.outer.map(fr), holes: r.holes.map(function (h) { return h.map(fr); }) }; });
+    }
     var src = d.src === 'shape' ? (d.regs || []) : textRegionsNorm(d.text || '', d.font);
     var a = (d.rot || 0) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), w = d.w || 20;
     var f = function (p) { var x = p[0] * w, y = p[1] * w; return [x * c - y * s, x * s + y * c]; };
@@ -3923,6 +4032,12 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   function inFrame(m, F) { return m.transform(function (x, y, z) { return [F.o[0] + x * F.r[0] + y * F.u[0] + z * F.n[0], F.o[1] + x * F.r[1] + y * F.u[1] + z * F.n[1], F.o[2] + x * F.r[2] + y * F.u[2] + z * F.n[2]]; }); }
   function decalLook(d, o, w, rot) { // quick picture of the inlay at a new spot / size / angle, before the cut is redone
     var dd = Object.assign({}, d, { w: w, rot: rot }), F = { o: o, r: d.F.r, u: d.F.u, n: d.F.n }, m = new G.Mesh();
+    if (d.src === 'pattern') { // light preview: just the area while dragging
+      var a = rot * Math.PI / 180, c = Math.cos(a), s2 = Math.sin(a), hw = w / 2, hh = decv(d, 'ph') / 2, k = Math.min(1, Math.min(hw, hh) * 0.5);
+      var ring = function (x, y) { return [x * c - y * s2, x * s2 + y * c]; };
+      m.append(G.extrude([[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(function (p) { return ring(p[0], p[1]); }), [[[-hw + k, -hh + k], [-hw + k, hh - k], [hw - k, hh - k], [hw - k, -hh + k]].map(function (p) { return ring(p[0], p[1]); })], -0.05, 0.5));
+      return inFrame(m, F);
+    }
     decalRegions(dd).forEach(function (r) { m.append(G.extrude(r.outer, r.holes, -0.05, 0.5)); });
     return inFrame(m, F);
   }
@@ -4419,7 +4534,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   function shp(s, k) { return s[k] != null ? s[k] : SHP_DEF[k]; }
   function getPath(p) {
     if (p.indexOf('multi.') === 0) return multiGet(p.slice(6));
-    if (p.indexOf('dec.') === 0) { var d0 = shapeById(S.sel); return d0 ? (p === 'dec.wrap' ? d0.wrap !== false : d0[p.slice(4)]) : 0; }
+    if (p.indexOf('dec.') === 0) { var d0 = shapeById(S.sel); return d0 ? (p === 'dec.wrap' ? d0.wrap !== false : decv(d0, p.slice(4))) : 0; }
     if (p.indexOf('cn.') === 0) { var c0 = shapeById(S.sel); if (!c0) return 0; var k0 = p.slice(3); return c0[k0] != null ? c0[k0] : CONN_DEFAULTS[c0.type][k0]; }
     if (p.indexOf('shp.') === 0) { var s3 = shapeById(S.sel); return s3 ? shp(s3, p.slice(4)) : 0; }
     if (p.indexOf('sel.') === 0) {
@@ -4496,13 +4611,13 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   function panelDraw() {
     var s = shapeById(S.sel), h = '';
     if (polyPts.length) {
-      return '<h2>Straight lines</h2><p class="sub">Tap to add corners. Tap the orange dot to close the shape.</p>' +
-        '<div class="btns"><button class="primary" data-act="poly-done">Finish shape</button><button class="ghost" data-act="poly-cancel">Cancel</button></div>';
+      return '<h2>Straight lines</h2><p class="sub">' + (S.openLine ? 'Tap each point of the line, then Finish line. Tap the orange dot to close it into a loop.' : 'Tap to add corners. Tap the orange dot to close the shape.') + '</p>' +
+        '<div class="btns"><button class="primary" data-act="poly-done">' + (S.openLine ? 'Finish line' : 'Finish shape') + '</button><button class="ghost" data-act="poly-cancel">Cancel</button></div>';
     }
     if (!s) {
       h += '<h2>Draw a shape</h2><p class="sub">Pick a tool on the left and draw on the grid. Every outline closes itself.</p>';
       h += '<ul class="tips"><li><b>S Pen</b> draws</li><li><b>One finger</b> moves the view, <b>two fingers</b> zoom</li><li>Tap a shape to select it. Tap again to reach the one underneath, or use the Object list at the top left</li><li>Mouse: left button draws, right button or wheel moves and zooms</li></ul>';
-      h += toggle('fingerDraw', 'Draw with finger too') + toggle('snap', 'Snap to other objects while moving');
+      h += toggle('fingerDraw', 'Draw with finger too') + toggle('snap', 'Snap to other objects while moving') + toggle('openLine', 'Pen and Lines draw lines, not closed shapes') + (S.openLine ? stepper('lineW', 'Line width', 'mm', 0.2, 0.4, 20, 1) + '<p class="note">Lines can be raised, used as an inlay (pick them under <b>My drawing</b>), or set to <b>A hole</b> to cut a groove.</p>' : '');
       h += stepper('T', 'Height for new shapes', 'mm', 1, 0.2, 256, 1);
       h += '<div class="btns"><button class="ghost" data-act="add-jar">Make a screw-top jar</button><button class="ghost" data-act="lib-open">My parts</button></div><div class="btns"><button class="ghost" data-act="add-sphere">Make a sphere</button></div>';
       if (GS().length) h += '<div class="btns"><button class="ghost" data-act="view3d">See in 3D</button>' + '</div>' + saveButtons('Save this plate') + '<button class="danger" data-act="clear">Clear this plate</button>';
@@ -4712,8 +4827,13 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     h += '<p class="sub">On ' + esc(tg ? (tg.name || shapeLabel(tg)) : 'a deleted object') + '</p>';
     h += '<div class="field"><label class="lbl" for="objname">Name</label><input type="text" id="objname" class="txt" data-name="1" maxlength="40" value="' + esc(d.name || '') + '" placeholder="Surface inlay" autocomplete="off"></div>';
     if (!d.F) h += '<p class="warn">Not placed yet. Tap Move it, then tap a spot on the object in the 3D view.</p>';
-    h += '<div class="field"><span class="lbl">Inlay</span><div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button data-act="dsrc-text" class="' + (d.src !== 'shape' ? 'on' : '') + '">Text</button><button data-act="dsrc-shape" class="' + (d.src === 'shape' ? 'on' : '') + '">My drawing</button></div></div>';
-    if (d.src !== 'shape') h += '<div class="field"><input type="text" class="txt" data-dtext="1" value="' + esc(d.text || '') + '" placeholder="Type here" aria-label="Inlay text"></div>' + fontControls('decal', d.font);
+    h += '<div class="field"><span class="lbl">Inlay</span><div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))"><button data-act="dsrc-text" class="' + (d.src !== 'shape' && d.src !== 'pattern' ? 'on' : '') + '">Text</button><button data-act="dsrc-shape" class="' + (d.src === 'shape' ? 'on' : '') + '">My drawing</button><button data-act="dsrc-pattern" class="' + (d.src === 'pattern' ? 'on' : '') + '">Pattern</button></div></div>';
+    if (d.src === 'pattern') {
+      h += seg('dec.pat', 'Pattern', [['crisscross', 'Criss-cross'], ['squares', 'Squares'], ['waves', 'Waves'], ['stripes', 'Stripes']]) + seg('dec.pat', '', [['zigzag', 'Zigzag'], ['dots', 'Dots'], ['honeycomb', 'Honeycomb']]);
+      h += stepper('dec.ph', 'Area height', 'mm', 2, 4, 250, 1) + stepper('dec.cell', 'Pattern size', 'mm', 0.5, 1.5, 40, 1) + (decv(d, 'pat') === 'dots' ? '' : stepper('dec.line', 'Line thickness', 'mm', 0.2, 0.4, 10, 1));
+      h += '<p class="note">' + (d.mode === 'sunken' || d.mode === 'raised' ? 'A texture you can feel. Keep lines at least 0.8 mm wide so they print cleanly.' : 'Flush in another color makes a colored pattern. Use Raised or Sunken for a texture you can feel.') + ' The pattern fills the inlay width by the area height.</p>';
+    }
+    else if (d.src !== 'shape') h += '<div class="field"><input type="text" class="txt" data-dtext="1" value="' + esc(d.text || '') + '" placeholder="Type here" aria-label="Inlay text"></div>' + fontControls('decal', d.font);
     else {
       var dr = flatSolids().concat(GS().filter(function (x) { return x.role === 'hole' && x.kind !== 'mesh'; }));
       h += d.regs && d.regs.length ? '<p class="note">Using your drawing. Pick another to swap it.</p>' : '<p class="note">Pick one of your drawings. It moves into the inlay (Undo brings it back).</p>';
@@ -4935,6 +5055,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       case 'drotL': case 'drotR': if (s && s.kind === 'decal') { snapshot(); s.rot = ((s.rot || 0) + (a === 'drotL' ? 15 : 345)) % 360; changed(true); } break;
       case 'dsrc-text': if (s && s.kind === 'decal') { snapshot(); s.src = 'text'; if (!s.text) s.text = 'TEXT'; changed(true); } break;
       case 'dsrc-shape': if (s && s.kind === 'decal') { s.src = 'shape'; changed(true); } break;
+      case 'dsrc-pattern': if (s && s.kind === 'decal') { snapshot(); s.src = 'pattern'; if (!s.ph) s.ph = Math.round((s.w || 40) * 0.6); changed(true); } break;
       case 'add-box': addSolid('rect'); break;
       case 'add-jar': jarDialog(); break;
       case 'add-sphere': sphereDialog(); break;
