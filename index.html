@@ -2620,13 +2620,14 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
 
   /* ---------------- state ---------------- */
   var S = {
+    tiltStep: 15,
     plates: [{ id: 1, name: 'Main plate' }], plate: 1, multi: [], multiMode: false, groupNames: {}, tab: 'draw', view3d: false, tool: 'pen', fingerDraw: false, T: 4, lock: true, wall: 2, floorT: 2, openLine: false, lineW: 1.2, stand: { t: 5, taper: 100 }, loft: { hollow: false, wall: 2, floor: 2 }, lastSave: {}, sphere: { d: 40, hollow: false, wall: 2, flat: 1 }, snap: true, rep: { mode: 'row', n: 4, dx: 15, dy: 15, cols: 3, rows: 2, ang: 360 }, spinAxis: 'left', jar: { d: 50, H: 60, wall: 2.4, pitch: 3, clr: 0.4 }, screw: { M: 3, head: 'csk', nut: false }, lid: { T: 2, lipH: 4, clr: 0.2, click: false }, fil: 1,
     filaments: ['#F5A04A', '#EDEDED', '#2B2B2B', '#3B7DD8'],
     shapes: [], sel: null, nextId: 1,
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.7';
+  var VERSION = '1.8';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
@@ -2774,6 +2775,32 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     decalsOn(s.id).forEach(function (d) {
       if (!d.F) return; var o = d.F.o, p = rot([o[0] - cx, o[1] - cy, o[2] - cz]);
       d.F = { o: [cx + p[0], cy + p[1], cz + p[2] + lift], r: rot(d.F.r), u: rot(d.F.u), n: rot(d.F.n) };
+    });
+    refreshSilhouette(s);
+  }
+  /* turn a drawn shape into a solid model (needed before it can be tilted) */
+  function toMeshShape(s) {
+    if (s.kind === 'mesh') return;
+    var m = buildMeshFor([s], []);
+    s.kind = 'mesh'; s.smooth = 0; delete s.edgeT; delete s.edgeB;
+    s.mesh = { v: m.v.map(function (x) { return Math.round(x * 1e4) / 1e4; }), f: m.f };
+    refreshSilhouette(s);
+  }
+  /* tilt by any angle: axis 'y' raises the right side (+x), axis 'x' raises the back (+y); keeps its middle in place */
+  function tiltShape(s, axis, deg) {
+    toMeshShape(s);
+    var m = meshOf(s), b = m.bounds(), cx = (b[0] + b[3]) / 2, cy = (b[1] + b[4]) / 2, cz = (b[2] + b[5]) / 2;
+    var a = deg * Math.PI / 180, c = Math.cos(a), si = Math.sin(a);
+    var rot = axis === 'y' ? function (q) { return [q[0] * c - q[2] * si, q[1], q[0] * si + q[2] * c]; } : function (q) { return [q[0], q[1] * c - q[2] * si, q[1] * si + q[2] * c]; };
+    var v = m.v, nv = new Array(v.length);
+    for (var i = 0; i < v.length; i += 3) { var r = rot([v[i] - cx, v[i + 1] - cy, v[i + 2] - cz]); nv[i] = cx + r[0]; nv[i + 1] = cy + r[1]; nv[i + 2] = cz + r[2]; }
+    var lo = Infinity; for (i = 2; i < nv.length; i += 3) lo = Math.min(lo, nv[i]);
+    var lift = lo < 0 ? -lo : 0; // never below the plate
+    if (lift) for (i = 2; i < nv.length; i += 3) nv[i] += lift;
+    s.mesh = { v: nv, f: s.mesh.f, fc: s.mesh.fc };
+    decalsOn(s.id).forEach(function (d) {
+      if (!d.F) return; var o = d.F.o, q = rot([o[0] - cx, o[1] - cy, o[2] - cz]);
+      d.F = { o: [cx + q[0], cy + q[1], cz + q[2] + lift], r: rot(d.F.r), u: rot(d.F.u), n: rot(d.F.n) };
     });
     refreshSilhouette(s);
   }
@@ -2989,7 +3016,8 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     var kx = hx ? Math.max(0.5, Math.abs(w[0] - ax)) / Math.max(1e-6, b.w) : 1;
     var ky = hy ? Math.max(0.5, Math.abs(w[1] - ay)) / Math.max(1e-6, b.h) : 1;
     if (S.lock) { var k = hx && hy ? Math.max(kx, ky) : (hx ? kx : ky); kx = ky = k; if (!hx) ax = b.cx; if (!hy) ay = b.cy; }
-    g.orig.forEach(function (o) { scaleXY(o.s, kx, ky, ax, ay); });
+    var zb = Math.min.apply(null, g.orig.map(function (o) { return o.z; }));
+    g.orig.forEach(function (o) { scaleXY(o.s, kx, ky, ax, ay); if (S.lock) scaleZ(o.s, zb, kx); });
   }
   function dragShape(g) {
     if (g.type === 'rect') return G.rectPts(Math.min(g.a[0], g.b[0]), Math.min(g.a[1], g.b[1]), Math.max(g.a[0], g.b[0]), Math.max(g.a[1], g.b[1]));
@@ -4065,7 +4093,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
         gzLabel('Raised ' + fmt(nz) + ' mm');
       } else if (m === GZ.szp) {
         var nh = Math.max(0.2, Math.round((H0 + ds) * 10) / 10), k = nh / H0;
-        restoreList(D.orig); list.forEach(function (s) { scaleZ(s, g.z0, k); });
+        restoreList(D.orig); list.forEach(function (s) { scaleZ(s, g.z0, k); if (S.lock) scaleXY(s, k, k, b.cx, b.cy); });
         gzLabel('Height ' + fmt(nh) + ' mm');
       } else if (m === GZ.sall) {
         var dl = Math.hypot(b.w, b.h, H0) || 1, k2 = Math.max(0.05, (dl + ds) / dl);
@@ -4077,7 +4105,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
         var nw = Math.max(0.5, w0 + (pos ? ds : -ds)), kx = nw / Math.max(1e-6, w0);
         restoreList(D.orig);
         var ax = isX ? (pos ? b.minX : b.maxX) : b.cx, ay = isX ? b.cy : (pos ? b.minY : b.maxY);
-        list.forEach(function (s) { if (isX) scaleXY(s, kx, S.lock ? kx : 1, ax, ay); else scaleXY(s, S.lock ? kx : 1, kx, ax, ay); });
+        list.forEach(function (s) { if (isX) scaleXY(s, kx, S.lock ? kx : 1, ax, ay); else scaleXY(s, S.lock ? kx : 1, kx, ax, ay); if (S.lock) scaleZ(s, g.z0, kx); });
         gzLabel((isX ? 'Width ' : 'Depth ') + fmt(nw) + ' mm' + (S.lock ? ' (proportions kept)' : ''));
       }
       D.moved = true;
@@ -4618,8 +4646,9 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       var s = shapeById(S.sel); if (!s) return;
       var k = p.slice(4), b = shapeBox(s);
       snapshot();
-      if (k === 'w' && b.w > 0) { var kx = v / b.w; scaleXY(s, kx, S.lock ? kx : 1); }
-      else if (k === 'd' && b.h > 0) { var ky = v / b.h; scaleXY(s, S.lock ? ky : 1, ky); }
+      if (k === 'w' && b.w > 0) { var kx = v / b.w; scaleXY(s, kx, S.lock ? kx : 1); if (S.lock) scaleZ(s, s.z || 0, kx); }
+      else if (k === 'd' && b.h > 0) { var ky = v / b.h; scaleXY(s, S.lock ? ky : 1, ky); if (S.lock) scaleZ(s, s.z || 0, ky); }
+      else if (k === 'h' && S.lock && s.role !== 'hole') { var kh = v / Math.max(1e-6, s.h || S.T); scaleZ(s, s.z || 0, kh); scaleXY(s, kh, kh); }
       else if (k === 'cx') mapShape(s, function (x, y) { return [x + v - b.cx, y]; });
       else if (k === 'cy') mapShape(s, function (x, y) { return [x, y + v - b.cy]; });
       else if (k === 'h' && s.kind === 'mesh') { var z0 = s.z, k2 = v / Math.max(1e-6, s.h); setMeshZ(s, function (z) { return z0 + (z - z0) * k2; }); }
@@ -4724,6 +4753,9 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     h += '<div class="box"><h3>Position <span class="note" style="font-weight:400">(center of the shape)</span></h3>' +
       stepper('sel.cx', 'X', 'mm', 1, -300, 300, 1) + stepper('sel.cy', 'Y', 'mm', 1, -300, 300, 1) + '</div>';
     h += '<div class="field"><span class="lbl">Turn and flip</span><div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))"><button data-act="rotL">⟲ 15°</button><button data-act="rotR">⟳ 15°</button><button data-act="flip">Mirror</button></div></div>';
+    if (!isHole) h += '<div class="box"><h3>Tilt</h3>' + stepper('tiltStep', 'Tilt by', '°', 5, 1, 90, 0) +
+      '<div class="field"><div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button data-act="tilt-l">Left side up</button><button data-act="tilt-r">Right side up</button><button data-act="tilt-f">Front up</button><button data-act="tilt-b">Back up</button></div></div>' +
+      (isMesh ? '' : '<p class="note">Tilting turns this shape into a solid model. You can still move, resize and color it.</p>') + '</div>';
     if (isMesh) h += '<div class="field"><span class="lbl">Tip it over (90°)</span><div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button data-act="tipx">Forward</button><button data-act="tipy">Sideways</button></div></div>';
     if (S.plates.length > 1) h += '<div class="box"><h3>Plate</h3><p class="note">Moves this whole part (everything joined to it) to another plate.</p><div class="field"><select data-moveplate="1" aria-label="Move to plate"><option value="">Move to plate…</option>' +
       S.plates.filter(function (p) { return p.id !== S.plate; }).map(function (p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('') + '</select></div></div>';
@@ -4878,9 +4910,9 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   function multiSet(k, v) {
     var list = selList(), b = setBox(list);
     snapshot();
-    if (k === 'w' && b.w > 0) { var kx = v / b.w; list.forEach(function (s) { scaleXY(s, kx, S.lock ? kx : 1, b.cx, b.cy); }); }
-    else if (k === 'd' && b.h > 0) { var ky = v / b.h; list.forEach(function (s) { scaleXY(s, S.lock ? ky : 1, ky, b.cx, b.cy); }); }
-    else if (k === 'h') { var kz = v / Math.max(0.2, b.z1 - b.z0); list.forEach(function (s) { scaleZ(s, b.z0, kz); }); }
+    if (k === 'w' && b.w > 0) { var kx = v / b.w; list.forEach(function (s) { scaleXY(s, kx, S.lock ? kx : 1, b.cx, b.cy); if (S.lock) scaleZ(s, b.z0, kx); }); }
+    else if (k === 'd' && b.h > 0) { var ky = v / b.h; list.forEach(function (s) { scaleXY(s, S.lock ? ky : 1, ky, b.cx, b.cy); if (S.lock) scaleZ(s, b.z0, ky); }); }
+    else if (k === 'h') { var kz = v / Math.max(0.2, b.z1 - b.z0); list.forEach(function (s) { scaleZ(s, b.z0, kz); if (S.lock) scaleXY(s, kz, kz, b.cx, b.cy); }); }
     else if (k === 'z') list.forEach(function (s) { shiftZ(s, v - b.z0); });
     else if (k === 'cx') list.forEach(function (s) { mapShape(s, function (x, y) { return [x + v - b.cx, y]; }); });
     else if (k === 'cy') list.forEach(function (s) { mapShape(s, function (x, y) { return [x, y + v - b.cy]; }); });
@@ -5139,6 +5171,9 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       case 'lib-open': libraryDialog(); break;
       case 'add-cyl': addSolid('circle'); break;
       case 'import': $('#file3d').click(); break;
+      case 'tilt-l': case 'tilt-r': case 'tilt-f': case 'tilt-b':
+        if (s && s.role !== 'hole') { snapshot(); var tg = S.tiltStep || 15; tiltShape(s, a === 'tilt-l' || a === 'tilt-r' ? 'y' : 'x', a === 'tilt-r' || a === 'tilt-b' ? tg : -tg); changed(true); }
+        break;
       case 'tipx': case 'tipy': if (s && s.kind === 'mesh') { snapshot(); tipOver(s, a === 'tipx' ? 'x' : 'y'); changed(true); } break;
       case 'dup': if (s) { snapshot(); var c = copyShape(s); if (s.name) c.name = s.name + ' copy'; delete c.grp; mapShape(c, function (x, y) { return [x + 8, y - 8]; }); addObj(c); S.sel = c.id; changed(true); } break;
       case 'del': if (!s) { toast('Tap an object first, then the trash can.'); break; } if (multiOn()) { act('m-del'); toast('Deleted. Undo brings them back.'); break; } if (s) { snapshot(); S.shapes = S.shapes.filter(function (x) { return x !== s && !(x.kind === 'decal' && x.target === s.id) && !(x.kind === 'conn' && (x.a === s.id || x.b === s.id)); }); S.sel = null; changed(true); } break;
