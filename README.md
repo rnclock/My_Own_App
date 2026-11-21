@@ -1,6 +1,6 @@
 # PrintSketch
 
-**Version 1.6**
+**Version 1.7**
 
 PrintSketch is a tablet-friendly app for designing 3D prints for Bambu Lab printers. This repository holds only the finished app, published with GitHub Pages so it can be installed and used offline.
 

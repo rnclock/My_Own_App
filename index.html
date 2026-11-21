@@ -924,21 +924,21 @@ var G = (function () {
     var path = function (pts) { for (var j = 0; j + 1 < pts.length; j++) seg(pts[j], pts[j + 1]); pts.forEach(function (p) { polys.push(circlePts(p[0], p[1], r, 10)); }); };
     var D = Math.hypot(X, Y) + cell;
     if (type === 'crisscross') {
-      for (k = -D; k <= D; k += cell) { seg([k - D, -D], [k + D, D]); seg([k - D, D], [k + D, -D]); }
+      for (k = Math.floor(-D / cell) * cell; k <= D; k += cell) { seg([k - D, -D], [k + D, D]); seg([k - D, D], [k + D, -D]); }
     } else if (type === 'squares') {
-      for (x = -X; x <= X; x += cell) seg([x, -Y], [x, Y]);
+      for (x = Math.floor(-X / cell) * cell; x <= X; x += cell) seg([x, -Y], [x, Y]);
       for (y = -Y; y <= Y; y += cell) seg([-X, y], [X, y]);
     } else if (type === 'stripes') {
       for (y = -Y; y <= Y; y += cell) seg([-X, y], [X, y]);
     } else if (type === 'waves') {
-      for (y = -Y; y <= Y; y += cell * 0.8) { var pw = []; for (x = -X; x <= X; x += cell / 12) pw.push([x, y + Math.sin(x / cell * Math.PI * 2) * cell * 0.2]); path(pw); }
+      for (y = -Y; y <= Y; y += cell * 0.8) { var pw = []; for (x = Math.floor(-X / cell) * cell; x <= X; x += cell / 12) pw.push([x, y + Math.sin(x / cell * Math.PI * 2) * cell * 0.2]); path(pw); }
     } else if (type === 'zigzag') {
-      for (y = -Y; y <= Y; y += cell * 0.7) { var pz = []; for (x = -X, i = 0; x <= X + cell; x += cell / 2, i++) pz.push([x, y + (i % 2 ? cell * 0.25 : -cell * 0.25)]); path(pz); }
+      for (y = -Y; y <= Y; y += cell * 0.7) { var pz = []; for (x = Math.floor(-X / cell) * cell, i = 0; x <= X + cell; x += cell / 2, i++) pz.push([x, y + (i % 2 ? cell * 0.25 : -cell * 0.25)]); path(pz); }
     } else if (type === 'dots') {
-      for (y = -Y, i = 0; y <= Y; y += cell * 0.866, i++) for (x = -X + (i % 2 ? cell / 2 : 0); x <= X; x += cell) polys.push(circlePts(x, y, Math.max(r * 1.6, cell * 0.22), 24));
+      for (y = -Y, i = 0; y <= Y; y += cell * 0.866, i++) for (x = Math.floor(-X / cell) * cell + (i % 2 ? cell / 2 : 0); x <= X; x += cell) polys.push(circlePts(x, y, Math.max(r * 1.6, cell * 0.22), 24));
     } else if (type === 'honeycomb') {
       var R = cell / Math.sqrt(3), hx = cell, hy = R * 1.5;
-      for (y = -Y - hy, i = 0; y <= Y + hy; y += hy, i++) for (x = -X - hx + (i % 2 ? hx / 2 : 0); x <= X + hx; x += hx) {
+      for (y = -Y - hy, i = 0; y <= Y + hy; y += hy, i++) for (x = Math.floor(-X / hx) * hx - hx + (i % 2 ? hx / 2 : 0); x <= X + hx; x += hx) {
         var hex = []; for (k = 0; k < 6; k++) { var a = Math.PI / 6 + k * Math.PI / 3; hex.push([x + R * Math.cos(a), y + R * Math.sin(a)]); }
         for (k = 0; k < 6; k++) seg(hex[k], hex[(k + 1) % 6]);
         hex.forEach(function (p) { polys.push(circlePts(p[0], p[1], r, 10)); });
@@ -1873,7 +1873,8 @@ var G = (function () {
     return m;
   }
   function closedByIndex(m) { var E = new Map(); for (var q = 0; q < m.f.length; q += 3) for (var k = 0; k < 3; k++) { var a = m.f[q + k], b = m.f[q + (k + 1) % 3], key = a + '_' + b; E.set(key, (E.get(key) || 0) + 1); } var bad = 0; E.forEach(function (n, key) { var p2 = key.split('_'); if ((E.get(p2[1] + '_' + p2[0]) || 0) !== n) bad++; }); return { ok: bad === 0, badEdges: bad }; }
-  function imprintInlay(target, F, regs, depth, mode, wrapR) {
+  function imprintInlay(target, F, regs, depth, mode, wrapR, opts) {
+    opts = opts || {};
     if (wrapR) { // bend the outlines around the curve once, then redraw them cleanly so the stamping sees tidy edges
       var mA = function (a) { var ph = Math.max(-Math.PI * 0.45, Math.min(Math.PI * 0.45, a / wrapR)); return wrapR * Math.sin(ph); };
       var bend = function (ring) { var o = []; for (var i = 0; i < ring.length; i++) { var a = ring[i], b = ring[(i + 1) % ring.length], k = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.4)); for (var j = 0; j < k; j++) o.push([mA(a[0] + (b[0] - a[0]) * j / k), a[1] + (b[1] - a[1]) * j / k]); } return o; };
@@ -1893,13 +1894,14 @@ var G = (function () {
     });
     var root = bsp2(segs); if (!root) return null;
     var bx = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }; segs.forEach(function (s) { bx.x0 = Math.min(bx.x0, s[0], s[2]); bx.x1 = Math.max(bx.x1, s[0], s[2]); bx.y0 = Math.min(bx.y0, s[1], s[3]); bx.y1 = Math.max(bx.y1, s[1], s[3]); });
-    var loc = toFrame(target, F), v = loc.v, f = loc.f, mg = 0.05;
+    var loc = opts.loc || toFrame(target, F), v = loc.v, f = loc.f, mg = 0.05, cn = opts.canon ? function (i) { var c = opts.canon[i]; return c == null ? i : c; } : function (i) { return i; };
     // topmost outward surface under the letters (so faces hidden behind it are left alone)
     var res = 0.25, W = Math.ceil((bx.x1 - bx.x0 + 2 * mg) / res) + 2, H = Math.ceil((bx.y1 - bx.y0 + 2 * mg) / res) + 2, top = new Float64Array(W * H).fill(-Infinity), cand = [];
     var triOf = function (q) { var i0 = f[q] * 3, i1 = f[q + 1] * 3, i2 = f[q + 2] * 3; return [[v[i0], v[i0 + 1], v[i0 + 2]], [v[i1], v[i1 + 1], v[i1 + 2]], [v[i2], v[i2 + 1], v[i2 + 2]]]; };
     for (var q = 0; q < f.length; q += 3) {
       var T = triOf(q), mnx = Math.min(T[0][0], T[1][0], T[2][0]), mxx = Math.max(T[0][0], T[1][0], T[2][0]), mny = Math.min(T[0][1], T[1][1], T[2][1]), mxy = Math.max(T[0][1], T[1][1], T[2][1]);
       if (mxx < bx.x0 - mg || mnx > bx.x1 + mg || mxy < bx.y0 - mg || mny > bx.y1 + mg) continue;
+      if (opts.allow && !opts.allow[q / 3]) continue;
       var nz = (T[1][0] - T[0][0]) * (T[2][1] - T[0][1]) - (T[1][1] - T[0][1]) * (T[2][0] - T[0][0]);
       if (nz <= 1e-12) continue;
       // skip faces turned well away from the text's facing (a rail top, a deck edge): text shouldn't spill onto them
@@ -1933,11 +1935,11 @@ var G = (function () {
       if (seed < 0) { var bd = Infinity; cand.forEach(function (q3) { var T3 = triOf(q3), cx = (T3[0][0] + T3[1][0] + T3[2][0]) / 3, cy = (T3[0][1] + T3[1][1] + T3[2][1]) / 3, cz = (T3[0][2] + T3[1][2] + T3[2][2]) / 3, dd = cx * cx + cy * cy + cz * cz * 4; if (dd < bd) { bd = dd; seed = q3; } }); }
       if (seed < 0) return;
       var byEdge = new Map(), isC = {};
-      cand.forEach(function (q3) { isC[q3] = 1; for (var e4 = 0; e4 < 3; e4++) { var a4 = f[q3 + e4], b4 = f[q3 + (e4 + 1) % 3], k4 = Math.min(a4, b4) + '_' + Math.max(a4, b4), l4 = byEdge.get(k4); if (!l4) byEdge.set(k4, l4 = []); l4.push(q3); } });
+      cand.forEach(function (q3) { isC[q3] = 1; for (var e4 = 0; e4 < 3; e4++) { var a4 = cn(f[q3 + e4]), b4 = cn(f[q3 + (e4 + 1) % 3]), k4 = Math.min(a4, b4) + '_' + Math.max(a4, b4), l4 = byEdge.get(k4); if (!l4) byEdge.set(k4, l4 = []); l4.push(q3); } });
       var st = [seed]; reach[seed] = 1;
       while (st.length) {
         var q4 = st.pop();
-        for (var e5 = 0; e5 < 3; e5++) { var a5 = f[q4 + e5], b5 = f[q4 + (e5 + 1) % 3]; (byEdge.get(Math.min(a5, b5) + '_' + Math.max(a5, b5)) || []).forEach(function (n5) { if (!reach[n5]) { reach[n5] = 1; st.push(n5); } }); }
+        for (var e5 = 0; e5 < 3; e5++) { var a5 = cn(f[q4 + e5]), b5 = cn(f[q4 + (e5 + 1) % 3]); (byEdge.get(Math.min(a5, b5) + '_' + Math.max(a5, b5)) || []).forEach(function (n5) { if (!reach[n5]) { reach[n5] = 1; st.push(n5); } }); }
       }
     })();
     cand.forEach(function (q2) {
@@ -1952,7 +1954,7 @@ var G = (function () {
       var col = loc.fc ? (loc.fc[q2 / 3] || 0) : 0; I.forEach(function (pg) { pg.c = col; }); O.forEach(function (pg) { pg.c = col; });
       used[q2] = 1; ins = ins.concat(I); outs = outs.concat(O);
       // remember points that landed on this triangle's edges, so the untouched neighbour can be split to match
-      var ids = [f[q2], f[q2 + 1], f[q2 + 2]];
+      var ids = [cn(f[q2]), cn(f[q2 + 1]), cn(f[q2 + 2])];
       I.concat(O).forEach(function (pg) { pg.forEach(function (pt) {
         for (var e2 = 0; e2 < 3; e2++) {
           var A = T[e2], B = T[(e2 + 1) % 3], ex = B[0] - A[0], ey = B[1] - A[1], ez = B[2] - A[2], L2 = ex * ex + ey * ey + ez * ez; if (!L2) continue;
@@ -1997,12 +1999,12 @@ var G = (function () {
     var quad = function (p, q4, q5, p5, out) { out.push(p[0], p[1], p[2], q4[0], q4[1], q4[2], q5[0], q5[1], q5[2], p[0], p[1], p[2], q5[0], q5[1], q5[2], p5[0], p5[1], p5[2]); };
     for (var q6 = 0; q6 < f.length; q6 += 3) {
       if (used[q6]) continue;
-      var T2 = triOf(q6), id2 = [f[q6], f[q6 + 1], f[q6 + 2]], poly2 = [], extra = false;
+      var T2 = triOf(q6), id2 = [cn(f[q6]), cn(f[q6 + 1]), cn(f[q6 + 2])], poly2 = [], extra = false, has = [false, false, false], cornerAt = [];
       for (var e3 = 0; e3 < 3; e3++) {
         var a3 = id2[e3], b3 = id2[(e3 + 1) % 3], lst2 = onEdge.get(Math.min(a3, b3) + '_' + Math.max(a3, b3)), A3 = T2[e3], B3 = T2[(e3 + 1) % 3];
-        poly2.push(A3);
+        cornerAt[e3] = poly2.length; poly2.push(A3);
         if (lst2 && lst2.length) {
-          extra = true;
+          extra = true; has[e3] = true;
           var ex3 = B3[0] - A3[0], ey3 = B3[1] - A3[1], ez3 = B3[2] - A3[2], L3 = ex3 * ex3 + ey3 * ey3 + ez3 * ez3, seen = {};
           lst2.map(function (pt) { return [((pt[0] - A3[0]) * ex3 + (pt[1] - A3[1]) * ey3 + (pt[2] - A3[2]) * ez3) / L3, pt]; }).sort(function (x, y) { return x[0] - y[0]; })
             .forEach(function (x) { var kx = Math.round(x[0] * 1e7); if (!seen[kx]) { seen[kx] = 1; poly2.push(x[1]); } });
@@ -2010,8 +2012,16 @@ var G = (function () {
       }
       var c2 = loc.fc ? (loc.fc[q6 / 3] || 0) : 0;
       if (!extra) { tris.push(T2[0][0], T2[0][1], T2[0][2], T2[1][0], T2[1][1], T2[1][2], T2[2][0], T2[2][1], T2[2][2]); paintC(c2); continue; }
-      var cc = [(T2[0][0] + T2[1][0] + T2[2][0]) / 3, (T2[0][1] + T2[1][1] + T2[2][1]) / 3, (T2[0][2] + T2[1][2] + T2[2][2]) / 3];
-      for (var j4 = 0; j4 < poly2.length; j4++) { var P1 = poly2[j4], P2 = poly2[(j4 + 1) % poly2.length]; tris.push(cc[0], cc[1], cc[2], P1[0], P1[1], P1[2], P2[0], P2[1], P2[2]); }
+      // fan from a corner whose two edges were not split (keeps every triangle inside the face); otherwise from the middle
+      var apex = -1; for (var k4 = 0; k4 < 3; k4++) if (!has[k4] && !has[(k4 + 2) % 3]) { apex = cornerAt[k4]; break; }
+      if (apex < 0 && opts.back) apex = cornerAt[0];
+      if (apex >= 0) {
+        var Ap = poly2[apex];
+        for (var j5 = 1; j5 + 1 < poly2.length; j5++) { var P3 = poly2[(apex + j5) % poly2.length], P4 = poly2[(apex + j5 + 1) % poly2.length]; tris.push(Ap[0], Ap[1], Ap[2], P3[0], P3[1], P3[2], P4[0], P4[1], P4[2]); }
+      } else {
+        var cc = [(T2[0][0] + T2[1][0] + T2[2][0]) / 3, (T2[0][1] + T2[1][1] + T2[2][1]) / 3, (T2[0][2] + T2[1][2] + T2[2][2]) / 3];
+        for (var j4 = 0; j4 < poly2.length; j4++) { var P1 = poly2[j4], P2 = poly2[(j4 + 1) % poly2.length]; tris.push(cc[0], cc[1], cc[2], P1[0], P1[1], P1[2], P2[0], P2[1], P2[2]); }
+      }
       paintC(c2);
     }
     outs.forEach(function (pg) { fan(pg, tris, false); paintC(pg.c); });
@@ -2028,9 +2038,50 @@ var G = (function () {
         quad(ps, pd, qd, qs, inl); // inlay side wall, facing out
       });
     }
-    var tm = fromFrame(weldFrame(tris, loc.fc ? tcols : null), F), im = fromFrame(weldFrame(inl, null), F);
+    var tm, im;
+    if (opts.back) { // unrolled surface: put every corner back in place first, then join them
+      var bk = function (arr) { for (var i = 0; i < arr.length; i += 3) { var q = opts.back(arr[i], arr[i + 1], arr[i + 2]); arr[i] = q[0]; arr[i + 1] = q[1]; arr[i + 2] = q[2]; } return arr; };
+      tm = weldFrame(bk(tris), loc.fc ? tcols : null); im = weldFrame(bk(inl), null);
+    } else { tm = fromFrame(weldFrame(tris, loc.fc ? tcols : null), F); im = fromFrame(weldFrame(inl, null), F); }
     if (signedVolume(im) < 0) meshFlipWinding(im);
     return { target: tm, inlay: im };
+  }
+  /* ---------------- All the way around a round part ---------------- */
+  function aroundInfo(target, F) {
+    var b = target.bounds(), cx = (b[0] + b[3]) / 2, cy = (b[1] + b[4]) / 2, dx = F.o[0] - cx, dy = F.o[1] - cy;
+    return { cx: cx, cy: cy, R: Math.max(1, Math.hypot(dx, dy)), th0: Math.atan2(dy, dx), z0: F.o[2] };
+  }
+  /* regs are in (s, b): s = distance around at the reference radius, b = height above the inlay's center */
+  function surfaceInlayAround(target, F, regs, depth, mode) {
+    var A = aroundInfo(target, F), v = target.v, f = target.f, loc = new Mesh(), nv = v.length / 3;
+    var uw = new Float64Array(nv * 3);
+    for (var i = 0; i < nv; i++) {
+      var dx = v[i * 3] - A.cx, dy = v[i * 3 + 1] - A.cy, th = Math.atan2(dy, dx) - A.th0;
+      while (th > Math.PI) th -= 2 * Math.PI; while (th <= -Math.PI) th += 2 * Math.PI;
+      uw[i * 3] = th * A.R; uw[i * 3 + 1] = v[i * 3 + 2] - A.z0; uw[i * 3 + 2] = Math.hypot(dx, dy);
+    }
+    for (i = 0; i < nv; i++) loc.v.push(uw[i * 3], uw[i * 3 + 1], uw[i * 3 + 2]);
+    var C = 2 * Math.PI * A.R, fc = target.fc ? [] : null, canon = {};
+    for (var q = 0; q < f.length; q += 3) {
+      var ids = [f[q], f[q + 1], f[q + 2]], ss = ids.map(function (k) { return uw[k * 3]; });
+      if (Math.max.apply(null, ss) - Math.min.apply(null, ss) > C / 2) { // crosses the seam at the back: use shifted copies
+        ids = ids.map(function (k) { var s = uw[k * 3]; if (s >= 0) return k; var id = loc.addV(s + C, uw[k * 3 + 1], uw[k * 3 + 2]); canon[id] = k; return id; });
+      }
+      loc.tri(ids[0], ids[1], ids[2]); if (fc) fc.push(target.fc[q / 3] || 0);
+    }
+    if (fc) loc.fc = fc;
+    // only the sides: faces that really point outward from the axis (not a top, a bottom or the point at the middle)
+    var allow = new Uint8Array(f.length / 3);
+    for (q = 0; q < f.length; q += 3) {
+      var a0 = f[q] * 3, b0 = f[q + 1] * 3, c0 = f[q + 2] * 3;
+      var ux = v[b0] - v[a0], uy = v[b0 + 1] - v[a0 + 1], uz = v[b0 + 2] - v[a0 + 2], wx = v[c0] - v[a0], wy = v[c0 + 1] - v[a0 + 1], wz = v[c0 + 2] - v[a0 + 2];
+      var nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx, nl = Math.hypot(nx, ny, nz) || 1;
+      var mx = (v[a0] + v[b0] + v[c0]) / 3 - A.cx, my = (v[a0 + 1] + v[b0 + 1] + v[c0 + 1]) / 3 - A.cy, ml = Math.hypot(mx, my);
+      if (ml < 0.5) continue;
+      allow[q / 3] = (nx * mx + ny * my) / (nl * ml) >= 0.35 ? 1 : 0;
+    }
+    var back = function (s, z, r) { var th = s / A.R + A.th0; return [A.cx + r * Math.cos(th), A.cy + r * Math.sin(th), z + A.z0]; };
+    return imprintInlay(target, F, regs, depth, mode, 0, { loc: loc, back: back, canon: canon, allow: allow });
   }
   /* split edges whose |a| span (x) is longer than maxDa, keeping the mesh closed */
   function subdivideX(m, maxDa, both) {
@@ -2308,7 +2359,7 @@ var G = (function () {
     rectPts: rectPts, circlePts: circlePts, roundRectPts: roundRectPts, transformPts: transformPts,
     Mesh: Mesh, extrude: extrude, box: box, xCylinder: xCylinder, checkClosed: checkClosed, signedVolume: signedVolume,
     plainPart: plainPart, inlayParts: inlayParts, hingeBox: hingeBox, hingeBoxParams: hingeBoxParams, lidRotate: lidRotate,
-    traceMask: traceMask, strokeRegions: strokeRegions, patternRegions: patternRegions, PATTERNS: PATTERNS, unionRegions: unionRegions, layeredPart: layeredPart, meshAndPrism: meshAndPrism, clipMeshAxis: clipMeshAxis, cutRegion: cutRegion, connFrame: connFrame, placeMesh: placeMesh, hingeParts: hingeParts, dovetailShapes: dovetailShapes, rayMesh: rayMesh, surfaceFrame: surfaceFrame, surfaceInlay: surfaceInlay, surfaceInlayWrap: surfaceInlayWrap, localCut: localCut, projectedInlay: projectedInlay, imprintInlay: imprintInlay, closedByIndex: closedByIndex, decodePaint: decodePaint, encodePaint: encodePaint, subdivideX: subdivideX, toFrame: toFrame, fromFrame: fromFrame, parseSTL: parseSTL, parse3MF: parse3MF, readZip: readZip, silhouette: silhouette, sliceMesh: sliceMesh, clipMesh: clipMesh, cutMesh: cutMesh, meshFlipWinding: meshFlipWinding, insetRegion: insetRegion, insetLevels: insetLevels, outsetRegion: outsetRegion, threadedJar: threadedJar, lathe: lathe, loft: loft, resampleRing: resampleRing, alignRing: alignRing, cupSolid: cupSolid, edgeSlabs: edgeSlabs, isConvex: isConvex, stlBinary: stlBinary, threeMF: threeMF, zip: zip, crc32: crc32
+    traceMask: traceMask, strokeRegions: strokeRegions, patternRegions: patternRegions, PATTERNS: PATTERNS, unionRegions: unionRegions, layeredPart: layeredPart, meshAndPrism: meshAndPrism, clipMeshAxis: clipMeshAxis, cutRegion: cutRegion, connFrame: connFrame, placeMesh: placeMesh, hingeParts: hingeParts, dovetailShapes: dovetailShapes, rayMesh: rayMesh, surfaceFrame: surfaceFrame, surfaceInlay: surfaceInlay, surfaceInlayWrap: surfaceInlayWrap, localCut: localCut, projectedInlay: projectedInlay, imprintInlay: imprintInlay, closedByIndex: closedByIndex, aroundInfo: aroundInfo, surfaceInlayAround: surfaceInlayAround, decodePaint: decodePaint, encodePaint: encodePaint, subdivideX: subdivideX, toFrame: toFrame, fromFrame: fromFrame, parseSTL: parseSTL, parse3MF: parse3MF, readZip: readZip, silhouette: silhouette, sliceMesh: sliceMesh, clipMesh: clipMesh, cutMesh: cutMesh, meshFlipWinding: meshFlipWinding, insetRegion: insetRegion, insetLevels: insetLevels, outsetRegion: outsetRegion, threadedJar: threadedJar, lathe: lathe, loft: loft, resampleRing: resampleRing, alignRing: alignRing, cupSolid: cupSolid, edgeSlabs: edgeSlabs, isConvex: isConvex, stlBinary: stlBinary, threeMF: threeMF, zip: zip, crc32: crc32
   };
 })();
 if (typeof module !== 'undefined') module.exports = G;
@@ -2575,7 +2626,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.6';
+  var VERSION = '1.7';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
@@ -3430,7 +3481,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   var gmCache = new Map();
   function groupMesh(gr) {
     var key = S.filaments.length + '/' + gr.mem.concat(gr.cuts).map(function (s) { return [s.edgeT, s.edgeTs, s.edgeB, s.edgeBs, s.M, s.head, s.nut, s.id, s.fil, S.shapes.indexOf(s), s.kind, s.role, s.z, s.h, s.through, s.smooth, s.raw.length, s.raw[0], s.raw[s.raw.length >> 1], s.mesh ? s.mesh.v.length + ':' + s.mesh.v[0] + ':' + s.mesh.v[s.mesh.v.length - 1] : ''].join('|'); }).join('#');
-    key += '@' + gr.mem.map(function (m) { return JSON.stringify(decalsOn(m.id).map(function (d) { return [d.id, d.src, d.text, d.font, d.regs ? d.regs.length : 0, d.F, d.w, d.rot, d.mode, d.layers, d.fil, d.wrap, d.pat, d.ph, d.cell, d.line]; })); }).join(',');
+    key += '@' + gr.mem.map(function (m) { return JSON.stringify(decalsOn(m.id).map(function (d) { return [d.id, d.src, d.text, d.font, d.regs ? d.regs.length : 0, d.F, d.w, d.rot, d.mode, d.layers, d.fil, d.wrap, d.pat, d.ph, d.cell, d.line, d.around]; })); }).join(',');
     key += '&' + JSON.stringify(S.shapes.filter(function (c) { return c.kind === 'conn' && gr.mem.some(function (m) { return m.id === c.a || m.id === c.b; }); }).map(cleanShape));
     if (gmCache.has(key)) { var hit = gmCache.get(key); (hit.decalMeshes || []).forEach(function (dm) { var d = shapeById(dm.id); if (d) d._mesh = dm.mesh; }); return hit; }
     var res = buildGroupMesh(gr);
@@ -3715,7 +3766,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       decalsOn(m.id).forEach(function (d) {
         var o = objs[m.id], regs = decalRegions(d); if (!d.F || !regs.length) return;
         try {
-          var r = (d.wrap !== false ? G.surfaceInlayWrap : G.surfaceInlay)(o.mesh, d.F, regs, Math.max(0.2, (d.layers || 3) * LAYER), d.mode || 'flush');
+          var r = applyOneDecal(o.mesh, d, regs);
           o.mesh = r.target; o.extra.push({ fil: Math.min(Math.max(1, d.fil || 2), S.filaments.length), mesh: r.inlay });
           d._mesh = r.inlay; dm.push({ id: d.id, mesh: r.inlay });
         } catch (e) { d._mesh = null; }
@@ -3772,7 +3823,21 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     return fils.sort().map(function (f) { return { fil: f, mesh: by[f] }; });
   }
   var patCache = new Map();
-  var DEC_DEF = { pat: 'crisscross', ph: 30, cell: 5, line: 0.8 };
+  /* put one inlay into a mesh: straight on, bent around a curve, or all the way around a round part */
+  function applyOneDecal(mesh, d, regs) {
+    var depth = Math.max(0.2, (d.layers || 3) * LAYER), mode = d.mode || 'flush';
+    if (decv(d, 'around')) {
+      var A = G.aroundInfo(mesh, d.F), C = 2 * Math.PI * A.R;
+      if (d.src === 'pattern') {
+        var n = Math.max(3, Math.round(C / decv(d, 'cell'))), cell = C / n, key = ['around', decv(d, 'pat'), C.toFixed(3), decv(d, 'ph'), cell.toFixed(4), decv(d, 'line')].join('|');
+        regs = patCache.get(key);
+        if (!regs) { regs = G.patternRegions(decv(d, 'pat'), C, decv(d, 'ph'), cell, decv(d, 'line')); patCache.set(key, regs); }
+      }
+      return G.surfaceInlayAround(mesh, d.F, regs, depth, mode);
+    }
+    return (d.wrap !== false ? G.surfaceInlayWrap : G.surfaceInlay)(mesh, d.F, regs, depth, mode);
+  }
+  var DEC_DEF = { pat: 'crisscross', ph: 30, cell: 5, line: 0.8, around: false };
   function decv(d, k) { return d[k] != null ? d[k] : DEC_DEF[k]; }
   function decalRegions(d) {
     if (d.src === 'pattern') {
@@ -3796,7 +3861,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       var tf = filOf(tgt), regs = decalRegions(d);
       if (!by[tf] || !regs.length) return;
       try {
-        var r = (d.wrap !== false ? G.surfaceInlayWrap : G.surfaceInlay)(by[tf], d.F, regs, Math.max(0.2, (d.layers || 3) * LAYER), d.mode || 'flush');
+        var r = applyOneDecal(by[tf], d, regs);
         by[tf] = r.target;
         var df = Math.min(Math.max(1, d.fil || 2), S.filaments.length);
         by[df] = by[df] || new G.Mesh(); by[df].append(r.inlay);
@@ -4847,7 +4912,9 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     h += seg('dec.layers', 'Depth', [[2, '0.4 mm<br><small>2 layers</small>'], [3, '0.6 mm<br><small>3 layers</small>'], [5, '1.0 mm<br><small>5 layers</small>']]);
     h += '<div class="field"><div class="row"><span class="lbl">Color (filament slot)</span><button class="linkbtn" data-act="edit-colors">Edit colors</button></div><div class="swatches">' +
       S.filaments.map(function (c, i) { var on = (d.fil || 2) === i + 1; return '<button class="sw' + (on ? ' on' : '') + '" data-fil="' + (i + 1) + '" aria-label="Filament ' + (i + 1) + '" aria-pressed="' + on + '"><span style="background:' + c + '"></span>' + (i + 1) + '</button>'; }).join('') + '</div></div>';
-    h += toggle('dec.wrap', 'Wrap around curved surfaces') + '<p class="note">' + (d.wrap !== false ? 'On a rounded face, like a can or a jar, the inlay bends around the curve like a label.' : 'Goes in straight, even on a curved face.') + '</p>';
+    h += toggle('dec.around', 'Go all the way around (round parts)');
+    if (decv(d, 'around')) h += '<p class="note">For cylinders, jars and spun vases: ' + (d.src === 'pattern' ? 'the pattern circles the whole part at this height, sized so the ends meet up at the back.' : 'it runs around the part at this height, centered where you placed it.') + '</p>';
+    else h += toggle('dec.wrap', 'Wrap around curved surfaces') + '<p class="note">' + (d.wrap !== false ? 'On a rounded face, like a can or a jar, the inlay bends around the curve like a label.' : 'Goes in straight, even on a curved face.') + '</p>';
     if (!S.view3d) h += '<div class="btns"><button class="ghost" data-act="view3d">See in 3D</button></div>';
     h += saveButtons('Save this part');
     h += '<div class="btns"><button class="danger" data-act="del">Delete inlay</button></div>';
