@@ -912,6 +912,14 @@ var G = (function () {
     var f = function (p) { return [x0 + (p[0] + 0.5) * px, y0 + (p[1] + 0.5) * px]; };
     return regs.map(function (r) { return { outer: r.outer.map(f), holes: r.holes.map(function (hh) { return hh.map(f); }) }; });
   }
+  /* the outside edge of the area an outline covers (fixes outlines that cross themselves) */
+  function solidOutline(pts) {
+    var b = bbox([pts]), px = Math.max(0.05, Math.max(b.w, b.h) / 600);
+    var rg = rasterRegions([pts], b.minX - 3 * px, b.minY - 3 * px, b.maxX + 3 * px, b.maxY + 3 * px, px);
+    if (!rg.length) return pts;
+    rg.sort(function (p, q) { return Math.abs(polyArea(q.outer)) - Math.abs(polyArea(p.outer)); });
+    return rg[0].outer;
+  }
   /* an open line (polyline) with a width -> regions */
   function strokeRegions(pts, width, closed) {
     var r = Math.max(0.1, width / 2), polys = [], n = pts.length;
@@ -1670,7 +1678,7 @@ var G = (function () {
       var t = (e2[0] * q[0] + e2[1] * q[1] + e2[2] * q[2]) * inv;
       if (t > 1e-6 && (!best || t < best.t)) {
         var n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]], L = Math.hypot(n[0], n[1], n[2]) || 1;
-        best = { t: t, n: [n[0] / L, n[1] / L, n[2] / L], p: [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t] };
+        best = { t: t, f: f, n: [n[0] / L, n[1] / L, n[2] / L], p: [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t] };
       }
     }
     return best;
@@ -2443,7 +2451,7 @@ var G = (function () {
   }
 
   return {
-    earcut: earcut, polyArea: polyArea, ensureCCW: ensureCCW, cleanPoly: cleanPoly, pointInPoly: pointInPoly, bbox: bbox,
+    earcut: earcut, solidOutline: solidOutline, polyArea: polyArea, ensureCCW: ensureCCW, cleanPoly: cleanPoly, pointInPoly: pointInPoly, bbox: bbox,
     smoothOutline: smoothOutline, simplifyClosed: simplifyClosed, rdp: rdp, selfIntersects: selfIntersects, polysIntersect: polysIntersect,
     rectPts: rectPts, circlePts: circlePts, roundRectPts: roundRectPts, transformPts: transformPts,
     Mesh: Mesh, extrude: extrude, box: box, xCylinder: xCylinder, checkClosed: checkClosed, signedVolume: signedVolume,
@@ -2716,7 +2724,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.9.2';
+  var VERSION = '1.10';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
@@ -4080,7 +4088,8 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       if (pv && pv.moved) items.push({ mesh: decalLook(ds, po, pw, pr), color: '#4a90e2', overlay: true });
       decalGizmo(ds, po, pw, pr).forEach(function (gi) { items.push({ mesh: gi.mesh, color: gi.color, overlay: true }); picks.push({ mesh: gi.mesh, id: gi.id, top: true }); });
     }
-    var gt = gzTarget();
+    measure3Items().forEach(function (it) { items.push(it); });
+    var gt = measure3On() ? null : gzTarget();
     if (gt && viewer.size) gizmoItems(gt).forEach(function (gi) { items.push({ mesh: gi.mesh, color: gi.color, overlay: true, alpha: gi.alpha }); picks.push({ mesh: gi.pick, id: gi.id, top: true }); });
     if (!keepCam || !viewer.size) viewer.centerOn(all.length ? all : [new G.Mesh()]);
     viewer.setItems(items, keepCam);
@@ -4270,12 +4279,47 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     var v = dir === 'l' ? d.F.r.map(function (x) { return -x; }) : dir === 'r' ? d.F.r : dir === 'u' ? d.F.u : d.F.u.map(function (x) { return -x; });
     d.F = { o: vadd(d.F.o, v, 1), r: d.F.r, u: d.F.u, n: d.F.n }; changed(true);
   }
+  /* ---------------- measuring in 3D: tap (or drag) from one point to another ---------------- */
+  var meas3 = null, meas3Drag = false;
+  function measure3On() { return S.tab === 'draw' && S.view3d && S.tool === 'measure'; }
+  function surfacePoint(x, y) { // nearest point on any part under the pointer, snapped to a corner when close; the plate if nothing
+    var r = viewer.ray(x, y), best = null, bm = null;
+    partGroups().forEach(function (g) { groupMesh(g).forEach(function (p) { var h = G.rayMesh(p.mesh, r.o, r.d); if (h && (!best || h.t < best.t)) { best = h; bm = p.mesh; } }); });
+    if (!best) { var pz = viewer.rayPlaneZ(x, y, 0); return pz ? [pz[0], pz[1], 0] : null; }
+    var tol = viewer.cam.dist * 0.012, pt = best.p, v = bm.v, bd = tol;
+    for (var k = 0; k < 3; k++) { var i = bm.f[best.f + k] * 3, dd = Math.hypot(v[i] - pt[0], v[i + 1] - pt[1], v[i + 2] - pt[2]); if (dd < bd) { bd = dd; best.snap = [v[i], v[i + 1], v[i + 2]]; } }
+    return best.snap || pt;
+  }
+  function seg3(a, b, r) { // a thin rod from a to b
+    var d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L = Math.hypot(d[0], d[1], d[2]); if (L < 1e-6) return new G.Mesh();
+    d = [d[0] / L, d[1] / L, d[2] / L];
+    var up = Math.abs(d[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0], e1 = [d[1] * up[2] - d[2] * up[1], d[2] * up[0] - d[0] * up[2], d[0] * up[1] - d[1] * up[0]], l1 = Math.hypot(e1[0], e1[1], e1[2]);
+    e1 = [e1[0] / l1, e1[1] / l1, e1[2] / l1]; var e2 = [d[1] * e1[2] - d[2] * e1[1], d[2] * e1[0] - d[0] * e1[2], d[0] * e1[1] - d[1] * e1[0]];
+    return G.xCylinder(0, 0, r, 0, 0, L, 10).transform(function (u, vv, w) { return [a[0] + u * d[0] + vv * e1[0] + w * e2[0], a[1] + u * d[1] + vv * e1[1] + w * e2[1], a[2] + u * d[2] + vv * e1[2] + w * e2[2]]; });
+  }
+  function measure3Items() {
+    if (!meas3 || !measure3On()) return [];
+    var u = viewer.cam.dist * 0.006, out = [{ mesh: cubeAt(meas3.a[0], meas3.a[1], meas3.a[2], u), color: '#ff4fa3', overlay: true }];
+    if (meas3.b) { out.push({ mesh: cubeAt(meas3.b[0], meas3.b[1], meas3.b[2], u), color: '#ff4fa3', overlay: true }); out.push({ mesh: seg3(meas3.a, meas3.b, u * 0.35), color: '#ff4fa3', overlay: true }); }
+    return out;
+  }
+  function measure3Text() {
+    if (!meas3) return 'Measure: tap a point on a part (or the plate), then tap a second point. Corners snap.';
+    if (!meas3.b) return 'Now tap the second point.';
+    var a = meas3.a, b = meas3.b;
+    return 'Measured ' + fmt(Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]), 1) + ' mm  (X ' + fmt(Math.abs(b[0] - a[0]), 1) + ', Y ' + fmt(Math.abs(b[1] - a[1]), 1) + ', Z ' + fmt(Math.abs(b[2] - a[2]), 1) + ') · tap to measure again';
+  }
   var drag3 = null;
   viewer.onCamEnd = function () { if (gzTarget()) draw3d(true); };
   viewer.hooks = {
     down: function (e, x, y) {
       if (S.tab !== 'draw' || !S.view3d) return false;
       if (S.placing) { placeAt(x, y); return true; }
+      if (measure3On()) {
+        var mp = surfacePoint(x, y); if (!mp) return false;
+        if (meas3 && !meas3.b) meas3.b = mp; else { meas3 = { a: mp, b: null }; meas3Drag = { moved: false }; }
+        renderHud(); draw3d(true); return true;
+      }
       var id = viewer.pick(x, y);
       if (id >= 60001 && id <= 60010) return gzStart(id, x, y);
       if (id === DGZ.size || id === DGZ.ring) { var dsel = decalSel(); return dsel ? decStart(id === DGZ.size ? 'size' : 'ring', dsel, x, y) : false; }
@@ -4293,6 +4337,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       return true;
     },
     move: function (e, x, y) {
+      if (meas3Drag && meas3) { var mq = surfacePoint(x, y); if (mq && Math.hypot(mq[0] - meas3.a[0], mq[1] - meas3.a[1], mq[2] - meas3.a[2]) > viewer.cam.dist * 0.01) { meas3.b = mq; meas3Drag.moved = true; renderHud(); draw3d(true, true); } return; }
       if (decDrag) { decMove(x, y); return; }
       if (gzDrag) { gzMove(x, y); return; }
       if (!drag3) return;
@@ -4304,6 +4349,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       draw3d(true, true);
     },
     up: function () {
+      if (meas3Drag) { if (!meas3Drag.moved && meas3) meas3.b = null; meas3Drag = false; renderHud(); draw3d(true); return; }
       if (decDrag) { decEnd(); return; }
       if (gzDrag) { gzEnd(); return; }
       if (!drag3) { renderHud(); return; }
@@ -4520,10 +4566,12 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       if (libStore(lib)) toast('Saved "' + name + '" to My parts.');
     };
   }
-  function insertFromLibrary(item) {
+  function insertFromLibrary(item, opt) {
+    opt = opt || {};
     var map = {}, gmap = {}, c = viewCenter(), solids = item.shapes.filter(function (x) { return x.kind !== 'decal' && x.kind !== 'conn'; });
     var bx = G.bbox(solids.map(function (x) { return x.kind === 'mesh' ? (x.sil && x.sil[0] ? x.sil[0].outer : [[0, 0]]) : x.raw; }).filter(function (r) { return r && r.length; }));
     var dx = isFinite(bx.cx) ? c[0] - bx.cx : 0, dy = isFinite(bx.cy) ? c[1] - bx.cy : 0;
+    if (opt.beside) { dx = (isFinite(bx.w) ? bx.w + 5 : 10) * opt.beside; dy = 0; } // a pasted copy lands beside the original, not touching it (touching parts join)
     snapshot();
     item.shapes.forEach(function (x) { map[x.id] = S.nextId++; });
     var made = [];
@@ -4531,14 +4579,25 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       var x = JSON.parse(JSON.stringify(x0)); x.id = map[x0.id]; x.plate = S.plate;
       if (x.kind === 'decal') x.target = map[x.target];
       if (x.kind === 'conn') { x.a = map[x.a]; x.b = map[x.b]; }
-      if (x.grp) { if (!gmap[x.grp]) { gmap[x.grp] = (Date.now() % 1000000000) + made.length + 11; S.groupNames[gmap[x.grp]] = (item.groupNames || {})[x.grp] || item.name; } x.grp = gmap[x.grp]; }
+      if (x.grp) { if (!gmap[x.grp]) { gmap[x.grp] = (Date.now() % 1000000000) + made.length + 11; S.groupNames[gmap[x.grp]] = ((item.groupNames || {})[x.grp] || item.name) + (opt.copy ? ' copy' : ''); } x.grp = gmap[x.grp]; }
+      if (opt.copy && x.name && x.kind !== 'decal' && x.kind !== 'conn') x.name = x.name.replace(/( copy( \d+)?)?$/, '') + ' copy';
       S.shapes.push(x); made.push(x);
     });
     made.forEach(function (x) { if (x.kind !== 'decal' && x.kind !== 'conn') { mapShape(x, function (px, py) { return [px + dx, py + dy]; }); touch(x); } });
     var sel = made.filter(function (x) { return x.kind !== 'decal' && x.kind !== 'conn'; }).map(function (x) { return x.id; });
     S.sel = sel[0] || null; S.multi = sel.length > 1 ? sel : [];
-    changed(true); toast('Added "' + item.name + '".');
+    changed(true); if (!opt.quiet) toast('Added "' + item.name + '".');
   }
+  /* keyboard copy / paste / duplicate (holes, inlays and connections come along) */
+  var clip = null, pasteN = 0;
+  function bundleItem() {
+    var shapes = partBundle(); if (!shapes.length) return null;
+    var gnames = {}; shapes.forEach(function (x) { if (x.grp && S.groupNames[x.grp]) gnames[x.grp] = S.groupNames[x.grp]; });
+    return { name: (shapes.filter(function (x) { return x.name; })[0] || {}).name || 'Part', shapes: JSON.parse(JSON.stringify(shapes)), groupNames: gnames };
+  }
+  function copySel() { var it = bundleItem(); if (!it) return toast('Select something to copy.'); clip = it; pasteN = 0; toast('Copied. Ctrl+V pastes a copy.'); }
+  function pasteClip() { if (!clip) return toast('Nothing copied yet. Select something and press Ctrl+C.'); pasteN++; insertFromLibrary(clip, { beside: pasteN, copy: true, quiet: true }); toast('Pasted a copy.'); }
+  function dupSel() { var it = bundleItem(); if (!it) return toast('Select something to duplicate.'); insertFromLibrary(it, { beside: 1, copy: true, quiet: true }); toast('Duplicated.'); }
   function libraryDialog() {
     var m = $('#modal');
     function draw() {
@@ -4603,13 +4662,21 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     toast('Stood up: ' + fmt(b.h) + ' mm tall, ' + fmt(T) + ' mm thick' + (k0 < 1 ? ', thinning to ' + fmt(T * k0, 1) + ' mm at the bottom.' : '.') + ' Undo brings the drawing back.', 5000);
   }
   /* ---------------- blend between outlines (loft) ---------------- */
+  function blendSlice(x) { // an outline that crosses itself is replaced by the area it covers, so it still blends
+    return isBad(x) ? G.solidOutline(outline(x)) : outline(x);
+  }
   function blendShapes() {
-    var l = selList().filter(function (x) { return x.kind !== 'mesh' && x.kind !== 'decal' && x.kind !== 'conn' && x.role !== 'hole'; });
-    if (l.length < 2) return toast('Select two or more drawn outlines.');
+    var all = selList(), left = [];
+    var l = all.filter(function (x) {
+      if (x.kind === 'mesh') { left.push('\u201c' + (x.name || shapeLabel(x)) + '\u201d is already a 3D part (Undo the spin or Stand it up to use its drawing as a slice)'); return false; }
+      if (x.role === 'hole') { left.push('\u201c' + (x.name || shapeLabel(x)) + '\u201d is a hole'); return false; }
+      return x.kind !== 'decal' && x.kind !== 'conn';
+    });
+    if (l.length < 2) return toast('Select two or more drawn outlines.' + (left.length ? ' Left out: ' + left.join('; ') + '.' : ''), 8000);
     var zs = l.map(function (x) { return x.z || 0; });
     if (zs.some(function (z, i) { return zs.indexOf(z) !== i; })) return toast('Give each outline its own height with Raised off the plate. The blend runs from the lowest to the highest.', 6000);
     var L = S.loft, m;
-    try { m = G.loft(l.map(function (x) { return { pts: outline(x), z: x.z || 0 }; }), { hollow: L.hollow, wall: L.wall, floor: L.floor }); } catch (e) { return toast('Could not blend those outlines.'); }
+    try { m = G.loft(l.map(function (x) { return { pts: blendSlice(x), z: x.z || 0 }; }), { hollow: L.hollow, wall: L.wall, floor: L.floor }); } catch (e) { return toast('Could not blend those outlines.'); }
     if (!m || !m.f.length) return toast('Could not blend those outlines.');
     if (m.wallTooThick) toast('The wall was too thick for one of the outlines, so it was left solid.', 5000);
     snapshot();
@@ -4617,7 +4684,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     var sh = meshShape(m, nm, { fil: l[0].fil });
     S.shapes = S.shapes.filter(function (x) { return l.indexOf(x) < 0; });
     S.sel = sh.id; S.multi = []; changed(true);
-    if (!m.wallTooThick) toast('Blended ' + l.length + ' outlines into one ' + (L.hollow ? 'hollow ' : '') + 'part. Undo brings them back.', 5000);
+    if (!m.wallTooThick) toast('Blended ' + l.length + ' outlines into one ' + (L.hollow ? 'hollow ' : '') + 'part. Undo brings them back.' + (left.length ? ' Left out: ' + left.join('; ') + '.' : ''), left.length ? 9000 : 5000);
   }
   function jarDialog() {
     var m = $('#modal'), J = S.jar;
@@ -5186,6 +5253,8 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
         '<input type="range" data-range="hinge.angle" min="0" max="180" step="1" value="' + S.hinge.angle + '" aria-label="Lid angle"><span class="val" id="val-hinge-angle">' + showVal['hinge.angle'](S.hinge.angle) + '</span></div>';
     } else if (S.tab === 'draw' && !S.view3d) {
       h = '<div class="hint">' + ({ measure: measure ? 'Measured ' + fmt(Math.hypot(measure.b[0] - measure.a[0], measure.b[1] - measure.a[1]), 1) + ' mm  (X ' + fmt(Math.abs(measure.b[0] - measure.a[0]), 1) + ', Y ' + fmt(Math.abs(measure.b[1] - measure.a[1]), 1) + ') · drag again to re-measure' : 'Measure: drag from one point to another. It snaps to corners and edges.', pen: 'Pen: draw an outline', line: 'Lines: tap each corner', rect: 'Rectangle: drag corner to corner', circle: 'Circle: drag from the center out', select: 'Select: tap a shape, drag to move it' }[S.tool]) + '</div>';
+    } else if (measure3On()) {
+      h = '<div class="hint">' + measure3Text() + '</div>';
     } else if (S.tab === 'draw' && S.view3d && S.placing) {
       h = '<div class="hudbar" style="width:auto;padding:8px 8px 8px 16px"><span style="font-weight:600">Tap the spot on the object where the inlay goes</span><button class="ghost" data-act="place-cancel">Cancel</button></div>';
     } else if (S.tab === 'draw' && S.view3d) {
@@ -5245,7 +5314,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       if (a === 'undo') { undo(); return; }
       if (a === 'redo') { redo(); return; }
       if (a === 'fit') { var all = GS().map(outline); fit2d(all.length ? G.bbox(all) : null); render2d(); return; }
-      S.tool = a; polyPts = []; renderPanel(); render2d(); return;
+      S.tool = a; polyPts = []; meas3 = null; meas3Drag = false; renderPanel(); render2d(); if (S.view3d) draw3d(true); return;
     }
     if ((a = t.getAttribute('data-step'))) {
       var d = +t.getAttribute('data-d'), v = Math.round((+getPath(a) + d) * 1000) / 1000;
@@ -5491,6 +5560,9 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || ((e.key === 'z' || e.key === 'Z') && e.shiftKey))) { e.preventDefault(); redo(); }
     else if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
     else if ((e.ctrlKey || e.metaKey) && (e.key === 'a' || e.key === 'A') && S.tab === 'draw') { e.preventDefault(); act('select-all'); }
+    else if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C') && S.tab === 'draw') { if (window.getSelection && String(window.getSelection())) return; e.preventDefault(); copySel(); }
+    else if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V') && S.tab === 'draw') { e.preventDefault(); pasteClip(); }
+    else if ((e.ctrlKey || e.metaKey) && (e.key === 'd' || e.key === 'D') && S.tab === 'draw') { e.preventDefault(); dupSel(); }
     else if ((e.key === 'Delete' || e.key === 'Backspace') && S.tab === 'draw' && S.sel) act('del');
     else if (e.key === 'Enter' && polyPts.length) finishPoly();
     else if (e.key === 'Escape') { polyPts = []; S.sel = null; renderPanel(); render2d(); }
