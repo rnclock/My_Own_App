@@ -95,6 +95,11 @@ select,.txt{width:100%;min-height:46px;border-radius:10px;border:1px solid #3A40
 .color{display:flex;align-items:center;gap:8px;min-height:44px;font-size:14px}
 .color input{width:44px;height:36px;border:0;background:none;padding:0}
 .box{background:#20242B;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.box.sec>h3:first-child{cursor:pointer;display:flex;align-items:center;gap:8px;margin:0;min-height:32px;user-select:none;-webkit-tap-highlight-color:transparent}
+.box.sec>h3:first-child::after{content:'';margin-left:auto;width:9px;height:9px;border-right:2px solid #9AA0AA;border-bottom:2px solid #9AA0AA;transform:rotate(45deg);transition:transform .15s;flex:none}
+.box.sec.shut>h3:first-child::after{transform:rotate(-45deg)}
+.box.sec.shut{gap:0;padding-top:8px;padding-bottom:8px}
+.box.sec.shut>:not(:first-child){display:none}
 #toast{visibility:hidden;position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(140%);background:#E8EAED;color:#16181D;padding:12px 18px;border-radius:12px;font-size:14px;font-weight:500;max-width:min(560px,92vw);transition:transform .25s;z-index:20;box-shadow:0 8px 30px rgba(0,0,0,.4)}
 #toast.show{visibility:visible;transform:translateX(-50%) translateY(0)}
 #modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;z-index:30;padding:20px}
@@ -2680,21 +2685,21 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
 
   /* ---------------- state ---------------- */
   var S = {
-    tiltStep: 15,
+    tiltStep: 15, handles: 'normal',
     plates: [{ id: 1, name: 'Main plate' }], plate: 1, multi: [], multiMode: false, groupNames: {}, tab: 'draw', view3d: false, tool: 'pen', fingerDraw: false, T: 4, lock: true, wall: 2, floorT: 2, openLine: false, lineW: 1.2, stand: { t: 5, taper: 100 }, loft: { hollow: false, wall: 2, floor: 2 }, lastSave: {}, sphere: { d: 40, hollow: false, wall: 2, flat: 1 }, snap: true, rep: { mode: 'row', n: 4, dx: 15, dy: 15, cols: 3, rows: 2, ang: 360 }, spinAxis: 'left', jar: { d: 50, H: 60, wall: 2.4, pitch: 3, clr: 0.4 }, screw: { M: 3, head: 'csk', nut: false }, lid: { T: 2, lipH: 4, clr: 0.2, click: false }, fil: 1,
     filaments: ['#F5A04A', '#EDEDED', '#2B2B2B', '#3B7DD8'],
     shapes: [], sel: null, nextId: 1,
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.8.1';
+  var VERSION = '1.9';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
   }
   function applySaved(d) {
     try {
-      if (d) { S.shapes = (d.shapes || []).map(function (x) { if (x.h == null) x.h = d.T || 4; if (x.z == null) x.z = 0; if (x.through == null) x.through = true; return x; }); S.nextId = d.nextId || 1; S.T = d.T || 4; Object.assign(S.inlay, d.inlay || {}); Object.assign(S.hinge, d.hinge || {}); S.fingerDraw = !!d.fingerDraw; if (d.snap === false) S.snap = false; if (d.openLine) S.openLine = true; if (d.lineW) S.lineW = d.lineW; ['lid', 'screw', 'jar', 'rep', 'stand', 'loft'].forEach(function (k) { if (d[k]) Object.assign(S[k], d[k]); }); S.hinge.angle = 0; if (S.tab === 'hinge') S.tab = 'draw'; if (d.lock != null) S.lock = d.lock; if (d.wall) S.wall = d.wall; if (d.floorT) S.floorT = d.floorT; if (d.projectName) S.projectName = d.projectName; if (Array.isArray(d.filaments) && d.filaments.length) S.filaments = d.filaments; if (d.fil) S.fil = d.fil; if (Array.isArray(d.plates) && d.plates.length) { S.plates = d.plates; S.plate = d.plate || d.plates[0].id; } if (d.groupNames) S.groupNames = d.groupNames; }
+      if (d) { S.shapes = (d.shapes || []).map(function (x) { if (x.h == null) x.h = d.T || 4; if (x.z == null) x.z = 0; if (x.through == null) x.through = true; return x; }); S.nextId = d.nextId || 1; S.T = d.T || 4; Object.assign(S.inlay, d.inlay || {}); Object.assign(S.hinge, d.hinge || {}); S.fingerDraw = !!d.fingerDraw; if (d.snap === false) S.snap = false; if (d.handles) S.handles = d.handles; if (d.openLine) S.openLine = true; if (d.lineW) S.lineW = d.lineW; ['lid', 'screw', 'jar', 'rep', 'stand', 'loft'].forEach(function (k) { if (d[k]) Object.assign(S[k], d[k]); }); S.hinge.angle = 0; if (S.tab === 'hinge') S.tab = 'draw'; if (d.lock != null) S.lock = d.lock; if (d.wall) S.wall = d.wall; if (d.floorT) S.floorT = d.floorT; if (d.projectName) S.projectName = d.projectName; if (Array.isArray(d.filaments) && d.filaments.length) S.filaments = d.filaments; if (d.fil) S.fil = d.fil; if (Array.isArray(d.plates) && d.plates.length) { S.plates = d.plates; S.plate = d.plate || d.plates[0].id; } if (d.groupNames) S.groupNames = d.groupNames; }
     } catch (e) { }
   }
   var saveTimer = null, storeWarned = false;
@@ -2719,7 +2724,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   function writeStore() {
     saveTimer = null;
     var data, stamp = Date.now();
-    try { data = JSON.stringify({ shapes: S.shapes.map(cleanShape), nextId: S.nextId, T: S.T, inlay: S.inlay, hinge: S.hinge, fingerDraw: S.fingerDraw, lock: S.lock, wall: S.wall, floorT: S.floorT, projectName: S.projectName, filaments: S.filaments, fil: S.fil, plates: S.plates, plate: S.plate, groupNames: S.groupNames, snap: S.snap, openLine: S.openLine, lineW: S.lineW, stand: S.stand, loft: S.loft, lid: S.lid, screw: S.screw, jar: S.jar, rep: S.rep }); } catch (e) { return; }
+    try { data = JSON.stringify({ shapes: S.shapes.map(cleanShape), nextId: S.nextId, T: S.T, inlay: S.inlay, hinge: S.hinge, fingerDraw: S.fingerDraw, lock: S.lock, wall: S.wall, floorT: S.floorT, projectName: S.projectName, filaments: S.filaments, fil: S.fil, plates: S.plates, plate: S.plate, groupNames: S.groupNames, snap: S.snap, handles: S.handles, openLine: S.openLine, lineW: S.lineW, stand: S.stand, loft: S.loft, lid: S.lid, screw: S.screw, jar: S.jar, rep: S.rep }); } catch (e) { return; }
     try {
       localStorage.setItem('printsketch-v1', data); localStorage.removeItem('printsketch-big'); storeWarned = false;
       idbPut(null).catch(function () { });
@@ -4052,7 +4057,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       decalGizmo(ds, po, pw, pr).forEach(function (gi) { items.push({ mesh: gi.mesh, color: gi.color, overlay: true }); picks.push({ mesh: gi.mesh, id: gi.id, top: true }); });
     }
     var gt = gzTarget();
-    if (gt && viewer.size) gizmoItems(gt).forEach(function (gi) { items.push({ mesh: gi.mesh, color: gi.color, overlay: true }); picks.push({ mesh: gi.mesh, id: gi.id, top: true }); });
+    if (gt && viewer.size) gizmoItems(gt).forEach(function (gi) { items.push({ mesh: gi.mesh, color: gi.color, overlay: true, alpha: gi.alpha }); picks.push({ mesh: gi.pick, id: gi.id, top: true }); });
     if (!keepCam || !viewer.size) viewer.centerOn(all.length ? all : [new G.Mesh()]);
     viewer.setItems(items, keepCam);
     viewer.setPickItems(picks);
@@ -4088,25 +4093,28 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     return m;
   }
   function cubeAt(x, y, z, e) { return G.box(x - e, y - e, z - e, x + e, y + e, z + e); }
+  /* handles: start outside the object, see-through until used; only the one being dragged shows while dragging */
   function gizmoItems(s) {
-    var g = gzBox(s), b = g.b, unit = viewer.cam.dist * 0.016, items = [];
-    var span = Math.max(b.w, b.h, g.z1 - g.z0), L = span / 2 + unit * 7;
+    if (S.handles === 'off') return [];
+    var g = gzBox(s), b = g.b, unit = viewer.cam.dist * (S.handles === 'small' ? 0.0075 : 0.0105), items = [];
+    var gap = unit * 1.5, len = unit * 6, act = gzDrag ? gzDrag.mode : null;
     var tr = function (m, x, y, z) { return m.transform(function (a, c, d) { return [a + x, c + y, d + z]; }); };
+    var add = function (id, color, mesh, pick) { if (act && act !== id) return; items.push({ mesh: mesh, pick: pick || mesh, color: color, id: id, alpha: act ? 1 : 0.6 }); };
+    var arrow = function (r, cr, ch) { var m = new G.Mesh(); m.append(G.xCylinder(0, 0, r, 0, 0, len, 12)); m.append(cone(cr, ch, 16).transform(function (a, c, d) { return [a + len, c, d]; })); return m; };
+    var starts = { x: [b.maxX + gap, b.cy, g.cz], y: [b.cx, b.maxY + gap, g.cz], z: [b.cx, b.cy, g.z1 + gap * 1.8] };
     [['x', '#e5484d', GZ.mx], ['y', '#30a46c', GZ.my], ['z', '#3e7bfa', GZ.mz]].forEach(function (ax) {
       if (ax[0] === 'z' && g.hole) return;
-      var shaft = along(G.xCylinder(0, 0, unit * 0.35, 0, 0, L, 12), ax[0]), tip = along(cone(unit * 1.1, unit * 2.6, 16).transform(function (a, c, d) { return [a + L, c, d]; }), ax[0]);
-      var m = new G.Mesh(); m.append(shaft); m.append(tip); tr(m, g.cx, g.cy, g.cz);
-      items.push({ mesh: m, color: ax[1], id: ax[2] });
+      var st = starts[ax[0]];
+      add(ax[2], ax[1], tr(along(arrow(unit * 0.3, unit * 0.95, unit * 2.2), ax[0]), st[0], st[1], st[2]), tr(along(arrow(unit * 1.3, unit * 1.8, unit * 2.6), ax[0]), st[0], st[1], st[2]));
     });
-    var e = unit * 0.9;
-    items.push({ mesh: cubeAt(b.maxX, b.cy, g.cz, e), color: '#ffb3b5', id: GZ.sxp });
-    items.push({ mesh: cubeAt(b.minX, b.cy, g.cz, e), color: '#ffb3b5', id: GZ.sxn });
-    items.push({ mesh: cubeAt(b.cx, b.maxY, g.cz, e), color: '#a7e3c4', id: GZ.syp });
-    items.push({ mesh: cubeAt(b.cx, b.minY, g.cz, e), color: '#a7e3c4', id: GZ.syn });
-    if (!g.hole) items.push({ mesh: cubeAt(b.cx, b.cy, g.z1, e), color: '#b7cdfd', id: GZ.szp });
-    items.push({ mesh: cubeAt(b.maxX, b.maxY, g.z1, e * 1.15), color: '#ffd84d', id: GZ.sall });
+    var span = Math.max(b.w, b.h, g.z1 - g.z0), e = Math.min(unit * 0.75, Math.max(unit * 0.4, span * 0.06)), pe = unit * 1.6; // smaller cubes on small objects; the grab area stays big
+    var cube = function (id, col, x, y, z, k) { add(id, col, cubeAt(x, y, z, e * (k || 1)), cubeAt(x, y, z, pe * (k || 1))); };
+    cube(GZ.sxp, '#ffb3b5', b.maxX, b.cy, g.cz); cube(GZ.sxn, '#ffb3b5', b.minX, b.cy, g.cz);
+    cube(GZ.syp, '#a7e3c4', b.cx, b.maxY, g.cz); cube(GZ.syn, '#a7e3c4', b.cx, b.minY, g.cz);
+    if (!g.hole) cube(GZ.szp, '#b7cdfd', b.cx, b.cy, g.z1);
+    cube(GZ.sall, '#ffd84d', b.maxX, b.maxY, g.z1, 1.15);
     var R = Math.hypot(b.w, b.h) / 2 + unit * 3;
-    items.push({ mesh: tr(torus(R, unit * 0.4, 72, 8), g.cx, g.cy, g.z0 + 0.05), color: '#f5a04a', id: GZ.rot });
+    add(GZ.rot, '#f5a04a', tr(torus(R, unit * 0.32, 72, 8), g.cx, g.cy, g.z0 + 0.05), tr(torus(R, unit * 1.3, 72, 8), g.cx, g.cy, g.z0 + 0.05));
     return items;
   }
   function axisParam(P0, u, x, y) { // where the pointer's ray passes closest to the line P0 + s*u
@@ -4763,7 +4771,33 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     var P = $('#panel'), h = '';
     if (S.tab === 'draw') h = panelDraw(); else if (S.tab === 'inlay') h = panelInlay(); else h = panelHinge();
     P.innerHTML = h;
+    foldSections(P);
     renderHud();
+  }
+  /* each section in the side panel folds down to its header; one is open at a time and stays open between objects */
+  var openSec = null;
+  try { openSec = localStorage.getItem('printsketch-open'); } catch (e) { }
+  function secKey(h3) { return (h3.childNodes[0] && h3.childNodes[0].textContent || h3.textContent).trim(); }
+  function foldSections(P) {
+    var boxes = Array.prototype.filter.call(P.children, function (b) { return b.classList.contains('box') && b.firstElementChild && b.firstElementChild.tagName === 'H3'; });
+    if (!boxes.length) return;
+    var keys = boxes.map(function (b) { return secKey(b.firstElementChild); });
+    var open = keys.indexOf(openSec) >= 0 ? openSec : (openSec === '-' ? null : (keys.indexOf('Size') >= 0 ? 'Size' : keys[0]));
+    boxes.forEach(function (b, i) {
+      var h3 = b.firstElementChild, k = keys[i];
+      b.classList.add('sec'); b.classList.toggle('shut', k !== open);
+      h3.setAttribute('role', 'button'); h3.setAttribute('tabindex', '0'); h3.setAttribute('aria-expanded', k === open ? 'true' : 'false');
+      var go = function () {
+        var wasOpen = !b.classList.contains('shut');
+        boxes.forEach(function (o) { o.classList.add('shut'); o.firstElementChild.setAttribute('aria-expanded', 'false'); });
+        if (!wasOpen) { b.classList.remove('shut'); h3.setAttribute('aria-expanded', 'true'); }
+        openSec = wasOpen ? '-' : k;
+        try { localStorage.setItem('printsketch-open', openSec); } catch (e) { }
+        if (!wasOpen) setTimeout(function () { b.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, 0);
+      };
+      h3.addEventListener('click', go);
+      h3.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+    });
   }
   function panelDraw() {
     var s = shapeById(S.sel), h = '';
@@ -4774,7 +4808,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     if (!s) {
       h += '<h2>Draw a shape</h2><p class="sub">Pick a tool on the left and draw on the grid. Every outline closes itself.</p>';
       h += '<ul class="tips"><li><b>S Pen</b> draws</li><li><b>One finger</b> moves the view, <b>two fingers</b> zoom</li><li>Tap a shape to select it. Tap again to reach the one underneath, or use the Object list at the top left</li><li>Mouse: left button draws, right button or wheel moves and zooms</li></ul>';
-      h += toggle('fingerDraw', 'Draw with finger too') + toggle('snap', 'Snap to other objects while moving') + toggle('openLine', 'Pen and Lines draw lines, not closed shapes') + (S.openLine ? stepper('lineW', 'Line width', 'mm', 0.2, 0.4, 20, 1) + '<p class="note">Lines can be raised, used as an inlay (pick them under <b>My drawing</b>), or set to <b>A hole</b> to cut a groove.</p>' : '');
+      h += toggle('fingerDraw', 'Draw with finger too') + toggle('snap', 'Snap to other objects while moving') + seg('handles', '3D handles', [['normal', 'Normal'], ['small', 'Small'], ['off', 'Off']]) + toggle('openLine', 'Pen and Lines draw lines, not closed shapes') + (S.openLine ? stepper('lineW', 'Line width', 'mm', 0.2, 0.4, 20, 1) + '<p class="note">Lines can be raised, used as an inlay (pick them under <b>My drawing</b>), or set to <b>A hole</b> to cut a groove.</p>' : '');
       h += stepper('T', 'Height for new shapes', 'mm', 1, 0.2, 256, 1);
       h += '<div class="btns"><button class="ghost" data-act="add-jar">Make a screw-top jar</button><button class="ghost" data-act="lib-open">My parts</button></div><div class="btns"><button class="ghost" data-act="add-sphere">Make a sphere</button></div>';
       if (GS().length) h += '<div class="btns"><button class="ghost" data-act="view3d">See in 3D</button>' + '</div>' + saveButtons('Save this plate') + '<button class="danger" data-act="clear">Clear this plate</button>';
@@ -4815,11 +4849,12 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     h += '</div>';
     h += '<div class="box"><h3>Position <span class="note" style="font-weight:400">(center of the shape)</span></h3>' +
       stepper('sel.cx', 'X', 'mm', 1, -300, 300, 1) + stepper('sel.cy', 'Y', 'mm', 1, -300, 300, 1) + '</div>';
-    h += '<div class="field"><span class="lbl">Turn and flip</span><div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))"><button data-act="rotL">⟲ 15°</button><button data-act="rotR">⟳ 15°</button><button data-act="flip">Mirror</button></div></div>';
-    if (!isHole) h += '<div class="box"><h3>Tilt</h3>' + stepper('tiltStep', 'Tilt by', '°', 5, 1, 90, 0) +
+    h += '<div class="box"><h3>Turn and tilt</h3><div class="field"><span class="lbl">Turn and flip</span><div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))"><button data-act="rotL">⟲ 15°</button><button data-act="rotR">⟳ 15°</button><button data-act="flip">Mirror</button></div></div>';
+    if (!isHole) h += stepper('tiltStep', 'Tilt by', '°', 5, 1, 90, 0) +
       '<div class="field"><div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button data-act="tilt-l">Left side up</button><button data-act="tilt-r">Right side up</button><button data-act="tilt-f">Front up</button><button data-act="tilt-b">Back up</button></div></div>' +
-      (isMesh ? '' : '<p class="note">Tilting turns this shape into a solid model. You can still move, resize and color it.</p>') + '</div>';
+      (isMesh ? '' : '<p class="note">Tilting turns this shape into a solid model. You can still move, resize and color it.</p>');
     if (isMesh) h += '<div class="field"><span class="lbl">Tip it over (90°)</span><div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button data-act="tipx">Forward</button><button data-act="tipy">Sideways</button></div></div>';
+    h += '</div>';
     if (S.plates.length > 1) h += '<div class="box"><h3>Plate</h3><p class="note">Moves this whole part (everything joined to it) to another plate.</p><div class="field"><select data-moveplate="1" aria-label="Move to plate"><option value="">Move to plate…</option>' +
       S.plates.filter(function (p) { return p.id !== S.plate; }).map(function (p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('') + '</select></div></div>';
     if (!isHole) h += '<div class="box"><h3>Screw hole</h3>' + seg('screw.M', 'Size', [['2','M2'],['2.5','M2.5'],['3','M3'],['4','M4'],['5','M5'],['6','M6'],['8','M8']]) + seg('screw.head', 'Head', [['flat', 'Plain'], ['csk', 'Countersunk'], ['cbore', 'Counterbore']]) + toggle('screw.nut', 'Hex nut pocket underneath') + '<button class="ghost" data-act="add-screw">Add screw hole</button></div>';
