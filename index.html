@@ -2716,7 +2716,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.9.1';
+  var VERSION = '1.9.2';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
@@ -4325,6 +4325,36 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     parts.forEach(function (p) { if (p.fil === f) m = p.mesh; });
     return m;
   }
+  /* a pattern's area as heights above the plate (when it runs straight up a side, or all the way around) */
+  function decVertical(d) {
+    if (!d || d.src !== 'pattern' || !d.F) return false;
+    if (decv(d, 'around')) return true;
+    return Math.abs(d.F.n[2]) < 0.35 && Math.abs(d.F.u[2]) > 0.9 && ((d.rot || 0) % 180) === 0;
+  }
+  function decRange(d) { var ph = decv(d, 'ph'); return [d.F.o[2] - ph / 2, d.F.o[2] + ph / 2]; }
+  function setDecRange(d, lo, hi) {
+    if (hi - lo < 2) return;
+    var zc = (lo + hi) / 2, F = d.F, tg = shapeById(d.target), o = [F.o[0], F.o[1], zc];
+    // land the middle back on the surface at its new height
+    var m = tg ? targetPartMesh(tg.id) : null;
+    if (m && decv(d, 'around')) {
+      var b = m.bounds(), cx = (b[0] + b[3]) / 2, cy = (b[1] + b[4]) / 2, dx = F.o[0] - cx, dy = F.o[1] - cy, dl = Math.hypot(dx, dy) || 1, far = Math.max(b[3] - b[0], b[4] - b[1]) + 20;
+      var hit = G.rayMesh(m, [cx + dx / dl * far, cy + dy / dl * far, zc], [-dx / dl, -dy / dl, 0]);
+      if (hit) o = [hit.p[0], hit.p[1], zc];
+    }
+    d.ph = Math.round((hi - lo) * 10) / 10; d.F = { o: o, r: F.r, u: F.u, n: F.n };
+  }
+  /* on a jar, keep a pattern that goes all the way around off the threads */
+  function jarThreadH(tg) { // jars made before this was kept: guess from the name and the jar settings
+    if (!tg) return 0; if (tg.threadH) return tg.threadH;
+    return tg.kind === 'mesh' && /^Jar(?! cap)/.test(tg.name || '') ? Math.max(4 * (S.jar.pitch || 3), 8) : 0;
+  }
+  function fitJarDecal(d) {
+    var tg = d && shapeById(d.target), th = jarThreadH(tg);
+    if (!th || !decVertical(d) || !decv(d, 'around')) return;
+    var lo = (tg.z || 0) + 2, hi = objTop(tg) - th - 1.5;
+    if (hi - lo >= 4) setDecRange(d, lo, hi);
+  }
   function placeAt(x, y) {
     var P = S.placing, m = targetPartMesh(P.target);
     if (!m) { S.placing = null; renderPanel(); return; }
@@ -4341,6 +4371,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       d = { id: S.nextId++, kind: 'decal', target: P.target, src: 'text', text: 'TEXT', F: F, w: Math.max(5, Math.min(60, Math.round(size * 0.6))), rot: 0, mode: 'flush', layers: 3, fil: filOf(t || {}) === 1 ? 2 : 1, raw: [], holes: [], role: 'solid', z: 0, h: 0 };
       addObj(d);
     }
+    fitJarDecal(d);
     S.sel = d.id; S.placing = null;
     changed(true);
   }
@@ -4609,7 +4640,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       snapshot();
       r.jar.transform(function (x, y, z) { return [x + c[0] - dx / 2, y + c[1], z]; });
       r.cap.transform(function (x, y, z) { return [x + c[0] + dx / 2, y + c[1], z]; });
-      var a = meshShape(r.jar, 'Jar'), b = meshShape(r.cap, 'Jar cap');
+      var a = meshShape(r.jar, 'Jar', { threadH: Math.min(neck, J.H) }), b = meshShape(r.cap, 'Jar cap');
       S.sel = a.id; changed(true);
       toast('Jar and cap made. The cap prints top-down; flip it over to screw it on.', 6000);
     };
@@ -4734,7 +4765,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   function shp(s, k) { return s[k] != null ? s[k] : SHP_DEF[k]; }
   function getPath(p) {
     if (p.indexOf('multi.') === 0) return multiGet(p.slice(6));
-    if (p.indexOf('dec.') === 0) { var d0 = shapeById(S.sel); return d0 ? (p === 'dec.wrap' ? d0.wrap !== false : decv(d0, p.slice(4))) : 0; }
+    if (p.indexOf('dec.') === 0) { var d0 = shapeById(S.sel); if (d0 && (p === 'dec.z0' || p === 'dec.z1')) return d0.F ? decRange(d0)[p === 'dec.z0' ? 0 : 1] : 0; return d0 ? (p === 'dec.wrap' ? d0.wrap !== false : decv(d0, p.slice(4))) : 0; }
     if (p.indexOf('cn.') === 0) { var c0 = shapeById(S.sel); if (!c0) return 0; var k0 = p.slice(3); return c0[k0] != null ? c0[k0] : CONN_DEFAULTS[c0.type][k0]; }
     if (p.indexOf('shp.') === 0) { var s3 = shapeById(S.sel); return s3 ? shp(s3, p.slice(4)) : 0; }
     if (p.indexOf('sel.') === 0) {
@@ -4746,7 +4777,14 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   }
   function setPath(p, v) {
     if (p.indexOf('multi.') === 0) { multiSet(p.slice(6), v); return; }
-    if (p.indexOf('dec.') === 0) { var d1 = shapeById(S.sel); if (d1) { snapshot(); d1[p.slice(4)] = v; } return; }
+    if (p.indexOf('dec.') === 0) {
+      var d1 = shapeById(S.sel); if (!d1) return; snapshot();
+      var dk = p.slice(4);
+      if (dk === 'z0' || dk === 'z1') { var rg = decRange(d1); if (dk === 'z0') setDecRange(d1, Math.min(v, rg[1] - 2), rg[1]); else setDecRange(d1, rg[0], Math.max(v, rg[0] + 2)); return; }
+      d1[dk] = v;
+      if (dk === 'around' && v) fitJarDecal(d1);
+      return;
+    }
     if (p.indexOf('cn.') === 0) { var c1 = shapeById(S.sel); if (c1) { snapshot(); c1[p.slice(3)] = v; } return; }
     if (p.indexOf('shp.') === 0) { var s4 = shapeById(S.sel); if (s4) { snapshot(); s4[p.slice(4)] = v; if (s4.kind === 'screw' && p === 'shp.M') { var b4 = shapeBox(s4); s4.raw = G.circlePts(b4.cx, b4.cy, SCREWS[v][0] / 2, 48); touch(s4); } } return; }
     if (p.indexOf('sel.') === 0) {
@@ -5061,7 +5099,8 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     h += '<div class="field"><span class="lbl">Inlay</span><div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))"><button data-act="dsrc-text" class="' + (d.src !== 'shape' && d.src !== 'pattern' ? 'on' : '') + '">Text</button><button data-act="dsrc-shape" class="' + (d.src === 'shape' ? 'on' : '') + '">My drawing</button><button data-act="dsrc-pattern" class="' + (d.src === 'pattern' ? 'on' : '') + '">Pattern</button></div></div>';
     if (d.src === 'pattern') {
       h += seg('dec.pat', 'Pattern', [['crisscross', 'Criss-cross'], ['squares', 'Squares'], ['waves', 'Waves'], ['stripes', 'Stripes']]) + seg('dec.pat', '', [['zigzag', 'Zigzag'], ['dots', 'Dots'], ['honeycomb', 'Honeycomb']]);
-      h += stepper('dec.ph', 'Area height', 'mm', 2, 4, 250, 1) + stepper('dec.cell', 'Pattern size', 'mm', 0.5, 1.5, 40, 1) + (decv(d, 'pat') === 'dots' ? '' : stepper('dec.line', 'Line thickness', 'mm', 0.2, 0.4, 10, 1));
+      h += (decVertical(d) ? stepper('dec.z0', 'Bottom of the area (above the plate)', 'mm', 0.5, -50, 300, 1) + stepper('dec.z1', 'Top of the area (above the plate)', 'mm', 0.5, -50, 300, 1) +
+        (jarThreadH(tg) && decv(d, 'around') ? '<p class="note">On a jar it stops just under the threads, so the cap still screws on.</p><button class="ghost" data-act="dec-jarfit">Fit it below the threads</button>' : '') : stepper('dec.ph', 'Area height', 'mm', 2, 4, 250, 1)) + stepper('dec.cell', 'Pattern size', 'mm', 0.5, 1.5, 40, 1) + (decv(d, 'pat') === 'dots' ? '' : stepper('dec.line', 'Line thickness', 'mm', 0.2, 0.4, 10, 1));
       h += '<p class="note">' + (d.mode === 'sunken' || d.mode === 'raised' ? 'A texture you can feel. Keep lines at least 0.8 mm wide so they print cleanly.' : 'Flush in another color makes a colored pattern. Use Raised or Sunken for a texture you can feel.') + ' The pattern fills the inlay width by the area height.</p>';
     }
     else if (d.src !== 'shape') h += '<div class="field"><input type="text" class="txt" data-dtext="1" value="' + esc(d.text || '') + '" placeholder="Type here" aria-label="Inlay text"></div>' + fontControls('decal', d.font);
@@ -5288,7 +5327,8 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       case 'drotL': case 'drotR': if (s && s.kind === 'decal') { snapshot(); s.rot = ((s.rot || 0) + (a === 'drotL' ? 15 : 345)) % 360; changed(true); } break;
       case 'dsrc-text': if (s && s.kind === 'decal') { snapshot(); s.src = 'text'; if (!s.text) s.text = 'TEXT'; changed(true); } break;
       case 'dsrc-shape': if (s && s.kind === 'decal') { s.src = 'shape'; changed(true); } break;
-      case 'dsrc-pattern': if (s && s.kind === 'decal') { snapshot(); s.src = 'pattern'; if (!s.ph) s.ph = Math.round((s.w || 40) * 0.6); changed(true); } break;
+      case 'dec-jarfit': if (s && s.kind === 'decal') { snapshot(); fitJarDecal(s); changed(true); } break;
+      case 'dsrc-pattern': if (s && s.kind === 'decal') { snapshot(); s.src = 'pattern'; if (!s.ph) s.ph = Math.round((s.w || 40) * 0.6); fitJarDecal(s); changed(true); } break;
       case 'add-box': addSolid('rect'); break;
       case 'add-jar': jarDialog(); break;
       case 'add-sphere': sphereDialog(); break;
