@@ -1351,7 +1351,7 @@ var G = (function () {
       var close = m[1] === '/', tag = m[2];
       if (tag === 'object') {
         if (close) { cur = null; continue; }
-        var a = attrs(m[3]); cur = { v: [], f: [], comps: [] }; objects[path + '#' + a.id] = cur;
+        var a = attrs(m[3]); cur = { v: [], f: [], comps: [], name: a.name || '' }; objects[path + '#' + a.id] = cur;
         if (m[4] === '/') cur = null;
       } else if (tag === 'vertex' && cur) { var v = attrs(m[3]); cur.v.push(+v.x, +v.y, +v.z); }
       else if (tag === 'triangle' && cur) { var t = attrs(m[3]); cur.f.push(+t.v1, +t.v2, +t.v3); var pc = t.paint_color || t['slic3rpe:mmu_segmentation']; if (pc) { if (!cur.pc) cur.pc = []; cur.pc[cur.f.length / 3 - 1] = decodePaint(pc); } }
@@ -1368,12 +1368,16 @@ var G = (function () {
       return (e.method === 8 ? inflateRaw(e.data) : Promise.resolve(e.data)).then(function (d) { return { name: '/' + e.name.replace(/^\//, ''), txt: new TextDecoder().decode(d) }; });
     })).then(function (files) {
       // Bambu Studio keeps modifier / negative / support-blocker volumes as extra parts: they are settings, not plastic
-      var skip = {}, skipped = 0;
+      var skip = {}, skipped = 0, partExt = {}, objExt = {};
       files.filter(function (f) { return /model_settings\.config$/i.test(f.name); }).forEach(function (f) {
         var ore = /<object\s+id="(\d+)"[^>]*>([\s\S]*?)<\/object>/g, om;
         while ((om = ore.exec(f.txt))) {
           var pre = /<part\s+id="(\d+)"\s+subtype="([^"]+)"/g, pm;
           while ((pm = pre.exec(om[2]))) if (pm[2] !== 'normal_part') (skip[om[1]] = skip[om[1]] || {})[pm[1]] = pm[2];
+          // which filament each part prints in
+          var bre = /<part\s+id="(\d+)"[^>]*>([\s\S]*?)<\/part>/g, bm, rest = om[2];
+          while ((bm = bre.exec(om[2]))) { var ex = /key="extruder"\s+value="(\d+)"/.exec(bm[2]); if (ex) (partExt[om[1]] = partExt[om[1]] || {})[bm[1]] = +ex[1]; rest = rest.replace(bm[0], ''); }
+          var oe = /key="extruder"\s+value="(\d+)"/.exec(rest); if (oe) objExt[om[1]] = +oe[1];
         }
       });
       var fcols = null;
@@ -1384,21 +1388,35 @@ var G = (function () {
       if (!items.length) files.forEach(function (f) { items = items.concat(parseModelXml(f.txt, f.name, {})); });
       var out = [];
       items.forEach(function (it) {
-        var tris = [], cols = [], painted = false;
-        (function walk(key, xf, depth) {
+        var tris = [], cols = [], painted = false, parts = [], cur = null;
+        (function walk(key, xf, depth, ext) {
           var o = objects[key]; if (!o || depth > 8) return;
+          var id = key.split('#').pop(), nm = /Filament (\d+)$/.exec(o.name || ''); // PrintSketch names its color parts "… · Filament N"
+          if (depth === 0 && objExt[id]) ext = objExt[id];
+          if (nm) ext = +nm[1];
+          if (depth === 1) { cur = { tris: [], cols: [], painted: false, ext: ext || 1, name: (o.name || '').replace(/\s*·\s*Filament \d+$/, '') }; parts.push(cur); }
           if (o.f.length) {
-            for (var t3 = 0; t3 < o.f.length / 3; t3++) { var cc = o.pc ? (o.pc[t3] || 0) : 0; cols.push(cc); if (cc) painted = true; }
+            for (var t3 = 0; t3 < o.f.length / 3; t3++) {
+              var p0 = o.pc ? (o.pc[t3] || 0) : 0, cc = p0 || (ext > 1 ? ext : 0); cols.push(cc); if (cc) painted = true;
+              if (cur) { cur.cols.push(p0); if (p0) cur.painted = true; }
+            }
             for (var i = 0; i < o.f.length; i++) {
               var vi = o.f[i] * 3, x = o.v[vi], y = o.v[vi + 1], z = o.v[vi + 2];
               if (xf) { var nx = x * xf[0] + y * xf[3] + z * xf[6] + xf[9], ny = x * xf[1] + y * xf[4] + z * xf[7] + xf[10], nz = x * xf[2] + y * xf[5] + z * xf[8] + xf[11]; x = nx; y = ny; z = nz; }
-              tris.push(x, y, z);
+              tris.push(x, y, z); if (cur) cur.tris.push(x, y, z);
             }
           }
           var sk = depth === 0 ? skip[key.split('#').pop()] : null;
-          o.comps.forEach(function (c) { if (sk && sk[c.key.split('#').pop()]) { skipped++; return; } walk(c.key, matMul(c.xf, xf), depth + 1); });
-        })(it.key, it.xf, 0);
-        if (tris.length) out.push(indexMesh(tris, painted ? cols : null));
+          var pe = depth === 0 ? partExt[id] : null;
+          o.comps.forEach(function (c) { var cid = c.key.split('#').pop(); if (sk && sk[cid]) { skipped++; return; } walk(c.key, matMul(c.xf, xf), depth + 1, (pe && pe[cid]) || ext); });
+        })(it.key, it.xf, 0, 0);
+        if (tris.length) {
+          var whole = indexMesh(tris, painted ? cols : null);
+          parts = parts.filter(function (q) { return q.tris.length; });
+          // each part on its own (same place), so it can be picked out and changed after reopening
+          if (parts.length > 1) whole.parts = parts.map(function (q) { var pm = indexMesh(q.tris, q.painted ? q.cols : null); pm.fil = q.ext; pm.name = q.name; return pm; });
+          out.push(whole);
+        }
       });
       if (!out.length) throw new Error('No 3D model found inside this .3mf file.');
       out.skipped = skipped; out.filaments = fcols;
@@ -2385,7 +2403,13 @@ var G = (function () {
       '<metadata name="Application">PrintSketch</metadata><resources>' + res.join('') + '</resources><build><item objectid="' + topId + '"/></build></model>';
     var ct = '<?xml version="1.0" encoding="UTF-8"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>';
     var rels = '<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>';
-    return zip([{ name: '[Content_Types].xml', data: ct }, { name: '_rels/.rels', data: rels }, { name: '3D/3dmodel.model', data: model }]);
+    var files = [{ name: '[Content_Types].xml', data: ct }, { name: '_rels/.rels', data: rels }, { name: '3D/3dmodel.model', data: model }];
+    if (parts.some(function (p) { return p.fil; })) { // tell Bambu Studio (and PrintSketch) which filament each part uses
+      var cfg = '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n  <object id="' + topId + '">\n    <metadata key="name" value="' + esc(objName) + '"/>\n    <metadata key="extruder" value="1"/>\n' +
+        parts.map(function (p, i) { return '    <part id="' + (i + 2) + '" subtype="normal_part">\n      <metadata key="name" value="' + esc(p.name) + '"/>\n      <metadata key="extruder" value="' + (p.fil || 1) + '"/>\n    </part>\n'; }).join('') + '  </object>\n</config>\n';
+      files.push({ name: 'Metadata/model_settings.config', data: cfg });
+    }
+    return zip(files);
   }
   var crcTable = (function () { var t = new Uint32Array(256); for (var n = 0; n < 256; n++) { var c = n; for (var k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
   function crc32(u8) { var c = 0xFFFFFFFF; for (var i = 0; i < u8.length; i++) c = crcTable[(c ^ u8[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
@@ -2692,7 +2716,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.9';
+  var VERSION = '1.9.1';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
@@ -4605,11 +4629,23 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       meshes.forEach(function (m, i) {
         tris += m.f.length / 3;
         var b = m.bounds(), dx = c[0] - (b[0] + b[3]) / 2 + i * 10, dy = c[1] - (b[1] + b[4]) / 2, dz = -b[2];
-        m.transform(function (x, y, z) { return [x + dx, y + dy, z + dz]; });
-        var sh = { id: S.nextId++, kind: 'mesh', raw: [], holes: [], smooth: 0, role: 'solid', z: 0, h: 0, through: true, name: name.replace(/\.[^.]+$/, ''), mesh: { v: m.v.map(function (x) { return Math.round(x * 1e4) / 1e4; }), f: m.f } };
-        if (m.fc) { sh.mesh.fc = m.fc; for (var pi = 0; pi < m.fc.length; pi++) if (m.fc[pi] > painted) painted = m.fc[pi]; }
-        refreshSilhouette(sh);
-        addObj(sh); if (!first) first = sh;
+        if (!m.parts) m.transform(function (x, y, z) { return [x + dx, y + dy, z + dz]; });
+        var base = name.replace(/\.[^.]+$/, ''), mk = function (mm, nm, fil) {
+          var sh = { id: S.nextId++, kind: 'mesh', raw: [], holes: [], smooth: 0, role: 'solid', z: 0, h: 0, through: true, name: nm, mesh: { v: mm.v.map(function (x) { return Math.round(x * 1e4) / 1e4; }), f: mm.f } };
+          if (fil > 1) { sh.fil = fil; if (fil > painted) painted = fil; }
+          if (mm.fc) { sh.mesh.fc = mm.fc; for (var pi = 0; pi < mm.fc.length; pi++) if (mm.fc[pi] > painted) painted = mm.fc[pi]; }
+          refreshSilhouette(sh); addObj(sh); if (!first) first = sh; return sh;
+        };
+        if (m.parts) { // several parts: keep them apart, joined as a group named after the file
+          var gid = (Date.now() % 1000000000) + i * 13 + 1, used = {};
+          S.groupNames[gid] = base + (meshes.length > 1 ? ' ' + (i + 1) : '');
+          m.parts.forEach(function (pm, k) {
+            pm.transform(function (x, y, z) { return [x + dx, y + dy, z + dz]; });
+            var nm = pm.name && pm.name !== base ? pm.name : base + ' part ' + (k + 1);
+            if (used[nm]) nm += ' (filament ' + (pm.fil || 1) + ')'; if (used[nm]) nm += ' ' + (k + 1); used[nm] = 1;
+            mk(pm, nm, pm.fil).grp = gid;
+          });
+        } else mk(m, base, 0);
       });
       var colNote = '';
       if (painted) {
@@ -4618,7 +4654,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
         else { while (S.filaments.length < Math.min(8, painted)) S.filaments.push(['#D94F4F', '#4FB06A', '#8E5BD9', '#E8D44D'][S.filaments.length % 4]); colNote = ' Its painted colors are on.'; }
         gmCache.clear();
       }
-      S.sel = first ? first.id : null;
+      if (first) selectShape(first); else S.sel = null;
       if (!S.view3d) { var all = GS().map(outline); fit2d(G.bbox(all)); }
       changed(true);
       if (colNote) setTimeout(function () { toast('Imported ' + name + '.' + colNote, 6000); }, 0);
@@ -4669,7 +4705,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       if (S.tab === 'draw') {
         var parts = drawParts(); if (!parts.length) return toast('Draw a shape first.');
         S.lastSave.draw = name;
-        deliver(file, parts.map(function (p) { return { name: (name || 'Part') + (parts.length > 1 ? ' · Filament ' + p.fil : ''), mesh: p.mesh, color: filColor(p.fil) }; }), which);
+        deliver(file, parts.map(function (p) { return { name: (name || 'Part') + (parts.length > 1 ? ' · Filament ' + p.fil : ''), mesh: p.mesh, color: filColor(p.fil), fil: p.fil }; }), which);
       } else if (S.tab === 'inlay') {
         var prob = inlayProblem(inlayBase(), inlayRegions()); if (prob) return toast(prob);
         var r = inlayMeshes(); S.lastSave.inlay = name;
