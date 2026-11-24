@@ -1424,7 +1424,9 @@ var G = (function () {
           if (depth === 1) { cur = { tris: [], cols: [], painted: false, ext: ext || 1, name: (o.name || '').replace(/\s*·\s*Filament \d+$/, '') }; parts.push(cur); }
           if (o.f.length) {
             for (var t3 = 0; t3 < o.f.length / 3; t3++) {
-              var p0 = o.pc ? (o.pc[t3] || 0) : 0, cc = p0 || (ext > 1 ? ext : 0); cols.push(cc); if (cc) painted = true;
+              var p0 = o.pc ? (o.pc[t3] || 0) : 0;
+              if (p0 && p0 === ext) p0 = 0; // a whole part written in its own color (how PrintSketch saves colors for Bambu Studio)
+              var cc = p0 || (ext > 1 ? ext : 0); cols.push(cc); if (cc) painted = true;
               if (cur) { cur.cols.push(p0); if (p0) cur.painted = true; }
             }
             for (var i = 0; i < o.f.length; i++) {
@@ -2397,7 +2399,7 @@ var G = (function () {
     });
     return new Uint8Array(buf);
   }
-  function meshXml(m) {
+  function meshXml(m, fil) { // fil: the part's filament, written as paint so Bambu Studio keeps it even when it loads geometry only
     var map = new Map(), verts = [], idx = new Array(m.v.length / 3);
     for (var i = 0; i < m.v.length / 3; i++) {
       var x = m.v[i * 3], y = m.v[i * 3 + 1], z = m.v[i * 3 + 2];
@@ -2409,7 +2411,7 @@ var G = (function () {
     for (var f = 0; f < m.f.length; f += 3) {
       var a = idx[m.f[f]], b = idx[m.f[f + 1]], c = idx[m.f[f + 2]];
       if (a === b || b === c || a === c) continue;
-      var pc = m.fc && m.fc[f / 3];
+      var pc = (m.fc && m.fc[f / 3]) || (fil > 1 ? fil : 0);
       tris.push('<triangle v1="' + a + '" v2="' + b + '" v3="' + c + '"' + (pc ? ' paint_color="' + encodePaint(pc) + '"' : '') + '/>');
     }
     return '<mesh><vertices>' + verts.join('') + '</vertices><triangles>' + tris.join('') + '</triangles></mesh>';
@@ -2421,7 +2423,7 @@ var G = (function () {
     res.push('<basematerials id="1">' + parts.map(function (p) { return '<base name="' + esc(p.name) + '" displaycolor="' + (p.color || '#CCCCCC').toUpperCase() + 'FF"/>'; }).join('') + '</basematerials>');
     parts.forEach(function (p, i) {
       var id = i + 2;
-      res.push('<object id="' + id + '" name="' + esc(p.name) + '" type="model" pid="1" pindex="' + i + '">' + meshXml(p.mesh) + '</object>');
+      res.push('<object id="' + id + '" name="' + esc(p.name) + '" type="model" pid="1" pindex="' + i + '">' + meshXml(p.mesh, p.fil) + '</object>');
       comps.push('<component objectid="' + id + '"/>');
     });
     var topId = parts.length + 2;
@@ -2743,7 +2745,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.15';
+  var VERSION = '1.16';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
