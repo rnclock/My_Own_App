@@ -1,6 +1,6 @@
 # PrintSketch user guide
 
-**Version 1.16.** Tap **?** in the app to see which version you have.
+**Version 1.17.** Tap **?** in the app to see which version you have.
 
 ## Installing PrintSketch
 
@@ -294,6 +294,8 @@ There are two ways to add an inlay. Use **Surface inlay** for most things; use t
 Keep lines at least 0.8 mm wide. Patterns wrap around curved faces like text does.
 
 **Knitted looks.** **Knit** makes rows of stockinette "V" stitches, **Ribbing** makes stitch columns with grooves between (like a cuff), and **Cable** makes twisted rope cables with stitches either side. Choosing one sets the finish to **Raised**. **Pattern size** is the width of one stitch (4–7 mm) or, for **Cable**, one cable panel (10–16 mm). A raised depth of 0.6–1.0 mm, matte filament, and a light **Fuzzy skin** in Bambu Studio make it look most like yarn.
+
+**Knit the whole object.** To cover a whole object in stitches, like a knitted toy, select it and open **Knit texture (whole object)**. Pick **Knit** (V stitches) or **Ribbing** (stitch columns), set **Stitch size** (4–6 mm looks most like yarn) and **Depth** (0.6–1.0 mm), and tap **Cover it in stitches**. The stitches wrap over every surface; the bottom stays smooth so it sits flat on the plate. **Redo the texture** starts again from the smooth shape, and **Remove the texture** puts it back. It works on drawn shapes, spheres, jars and imported models (colors are kept), and can take a few seconds on big models. Combined objects can't be textured: undo the combine, texture the pieces, then combine again. Print in matte filament with 0.12–0.16 mm layers.
 
 **All the way around.** On round parts (cylinders, jars, spun vases), turn on **Go all the way around (round parts)**. The pattern circles the whole part at the height where you placed it, and its size is adjusted slightly so the ends meet seamlessly at the back. Text and drawings run around the part too, centered where you placed them.
 

@@ -979,6 +979,84 @@ var G = (function () {
     var px = Math.max(0.04, Math.min(0.15, Math.max(W, H) / 1200));
     return rasterRegions(polys, -W / 2, -H / 2, W / 2, H / 2, px);
   }
+  /* ---------------- knitted surface texture over a whole model ---------------- */
+  // height (0..1) of a knit surface at (u, v); v is "up" (stitches point down), the pattern repeats every `cell` across
+  function knitHeight(type, u, v, cell) {
+    var colW = type === 'ribbing' ? cell * 0.6 : cell, rowH = type === 'ribbing' ? cell * 0.38 : cell * 0.62, shift = type === 'ribbing' ? -cell * 0.18 : 0;
+    var rx = colW * 0.155, ry = rowH * 0.62, ca = Math.cos(28 * Math.PI / 180), sa = Math.sin(28 * Math.PI / 180), best = 0;
+    var ci = Math.floor((u - shift) / cell), ri = Math.floor(v / rowH);
+    for (var dc = -1; dc <= 1; dc++) for (var dr = -1; dr <= 1; dr++) {
+      var cx = (ci + dc) * cell + shift + (type === 'ribbing' ? cell * 0.5 - cell * 0.5 : 0), cy = (ri + dr) * rowH;
+      for (var s = -1; s <= 1; s += 2) { // the two legs of the V
+        var lx = cx + s * colW * 0.23, ang = s < 0 ? 1 : -1; // left leg leans +28 deg, right leg -28 deg
+        var dx = u - lx, dy = v - cy, ex = dx * ca + ang * dy * sa, ey = -ang * dx * sa + dy * ca; // rotate back into the leg's own frame
+        var q = (ex * ex) / (rx * rx) + (ey * ey) / (ry * ry);
+        if (q < 1) { var h = Math.sqrt(1 - q); if (h > best) best = h; }
+      }
+    }
+    return best;
+  }
+  /* cover a closed mesh in stitches: split it finely, then push the surface in where the stitches have gaps.
+     opts: {type: 'knit'|'ribbing', cell, depth, keepBottom}  -> new Mesh (paint kept) */
+  function knitTexture(src, opts) {
+    var cell = Math.max(2, opts.cell || 5), depth = Math.max(0.2, opts.depth || 0.8), type = opts.type || 'knit';
+    // weld so neighbouring triangles share corners (needed for smooth normals and a crack-free split)
+    var key = new Map(), V = [], F = [], FC = src.fc ? [] : null;
+    var vid = function (i) { var x = src.v[i * 3], y = src.v[i * 3 + 1], z = src.v[i * 3 + 2], k = Math.round(x * 1e4) + ',' + Math.round(y * 1e4) + ',' + Math.round(z * 1e4), r = key.get(k); if (r == null) { r = V.length / 3; V.push(x, y, z); key.set(k, r); } return r; };
+    for (var f = 0; f < src.f.length; f += 3) { var a = vid(src.f[f]), b = vid(src.f[f + 1]), c = vid(src.f[f + 2]); if (a === b || b === c || a === c) continue; F.push(a, b, c); if (FC) FC.push(src.fc[f / 3] || 0); }
+    // how fine: about 7 samples across a stitch, but keep the model to a size the tablet can handle
+    var area = 0;
+    for (f = 0; f < F.length; f += 3) { var i0 = F[f] * 3, i1 = F[f + 1] * 3, i2 = F[f + 2] * 3, ux = V[i1] - V[i0], uy = V[i1 + 1] - V[i0 + 1], uz = V[i1 + 2] - V[i0 + 2], wx = V[i2] - V[i0], wy = V[i2 + 1] - V[i0 + 1], wz = V[i2 + 2] - V[i0 + 2]; area += Math.hypot(uy * wz - uz * wy, uz * wx - ux * wz, ux * wy - uy * wx) / 2; }
+    var L = cell / 7; if (area / (L * L * 0.433) > 900000) L = Math.sqrt(area / (900000 * 0.433));
+    var len = function (a, b) { return Math.hypot(V[a * 3] - V[b * 3], V[a * 3 + 1] - V[b * 3 + 1], V[a * 3 + 2] - V[b * 3 + 2]); };
+    for (var pass = 0; pass < 10; pass++) {
+      var mids = new Map(), any = false;
+      var midOf = function (a, b) { var k = a < b ? a + '_' + b : b + '_' + a, m = mids.get(k); if (m == null && len(a, b) > L) { m = V.length / 3; V.push((V[a * 3] + V[b * 3]) / 2, (V[a * 3 + 1] + V[b * 3 + 1]) / 2, (V[a * 3 + 2] + V[b * 3 + 2]) / 2); mids.set(k, m); } return m == null ? -1 : m; };
+      // decide every long edge first, so both triangles on an edge split it the same way (no cracks)
+      for (f = 0; f < F.length; f += 3) { midOf(F[f], F[f + 1]); midOf(F[f + 1], F[f + 2]); midOf(F[f + 2], F[f]); }
+      if (!mids.size) break;
+      var NF = [], NC = FC ? [] : null;
+      var get = function (a, b) { var m = mids.get(a < b ? a + '_' + b : b + '_' + a); return m == null ? -1 : m; };
+      for (f = 0; f < F.length; f += 3) {
+        var t0 = [F[f], F[f + 1], F[f + 2]], col = FC ? FC[f / 3] : 0, ms = [get(t0[0], t0[1]), get(t0[1], t0[2]), get(t0[2], t0[0])], n = (ms[0] >= 0) + (ms[1] >= 0) + (ms[2] >= 0), out = [];
+        if (n === 0) out = [t0];
+        else if (n === 3) out = [[t0[0], ms[0], ms[2]], [ms[0], t0[1], ms[1]], [ms[2], ms[1], t0[2]], [ms[0], ms[1], ms[2]]];
+        else {
+          var r = 0; // rotate so the edges are (A,B), (B,C), (C,A) with the split pattern in a fixed place
+          if (n === 1) r = ms[0] >= 0 ? 0 : ms[1] >= 0 ? 1 : 2; else r = ms[2] < 0 ? 0 : ms[0] < 0 ? 1 : 2;
+          var A = t0[r], B = t0[(r + 1) % 3], C = t0[(r + 2) % 3], mAB = ms[r], mBC = ms[(r + 1) % 3];
+          if (n === 1) out = [[A, mAB, C], [mAB, B, C]];
+          else out = [[mAB, B, mBC], [A, mAB, mBC], [A, mBC, C]];
+        }
+        out.forEach(function (tt) { NF.push(tt[0], tt[1], tt[2]); if (NC) NC.push(col); });
+      }
+      F = NF; if (NC) FC = NC; any = true;
+      if (!any) break;
+    }
+    // smooth normals
+    var nv = V.length / 3, N = new Float64Array(nv * 3), zmin = Infinity;
+    for (var i = 0; i < nv; i++) if (V[i * 3 + 2] < zmin) zmin = V[i * 3 + 2];
+    for (f = 0; f < F.length; f += 3) {
+      var p0 = F[f] * 3, p1 = F[f + 1] * 3, p2 = F[f + 2] * 3;
+      var ax = V[p1] - V[p0], ay = V[p1 + 1] - V[p0 + 1], az = V[p1 + 2] - V[p0 + 2], bx = V[p2] - V[p0], by = V[p2 + 1] - V[p0 + 1], bz = V[p2 + 2] - V[p0 + 2];
+      var nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
+      [p0, p1, p2].forEach(function (q) { N[q] += nx; N[q + 1] += ny; N[q + 2] += nz; });
+    }
+    var out = new Mesh(); out.v = V.slice(); out.f = F; if (FC) out.fc = FC;
+    for (i = 0; i < nv; i++) {
+      var nx2 = N[i * 3], ny2 = N[i * 3 + 1], nz2 = N[i * 3 + 2], nl = Math.hypot(nx2, ny2, nz2) || 1; nx2 /= nl; ny2 /= nl; nz2 /= nl;
+      var x = V[i * 3], y = V[i * 3 + 1], z = V[i * 3 + 2];
+      // keep the bottom smooth so it still sits flat on the plate
+      var keep = opts.keepBottom === false ? 1 : Math.max(0, Math.min(1, (z - zmin - 0.4) / 1.2)) * (nz2 < -0.6 ? 0 : 1);
+      if (!keep) continue;
+      // stitches seen from the side (x and y facing) run upright; from above they lie along x
+      var wx2 = Math.pow(Math.abs(nx2), 4), wy2 = Math.pow(Math.abs(ny2), 4), wz2 = Math.pow(Math.abs(nz2), 4), ws = wx2 + wy2 + wz2 || 1;
+      var h = (wx2 * knitHeight(type, nx2 >= 0 ? -y : y, z, cell) + wy2 * knitHeight(type, ny2 >= 0 ? x : -x, z, cell) + wz2 * knitHeight(type, x, y, cell)) / ws;
+      var d = -depth * (1 - h) * keep; // push the gaps in, so the stitches stand proud without the part growing
+      out.v[i * 3] = x + nx2 * d; out.v[i * 3 + 1] = y + ny2 * d; out.v[i * 3 + 2] = z + nz2 * d;
+    }
+    return out;
+  }
   /* ---------------- Layered parts: shapes with their own bottom/top heights ---------------- */
   function ringsCross(a, b) { return polysIntersect(a, b); }
   function ringInside(inner, outer) { return inner.every(function (p) { return pointInPoly(p[0], p[1], outer); }) && !ringsCross(inner, outer); }
@@ -2472,7 +2550,7 @@ var G = (function () {
   }
 
   return {
-    earcut: earcut, solidOutline: solidOutline, polyArea: polyArea, ensureCCW: ensureCCW, cleanPoly: cleanPoly, pointInPoly: pointInPoly, bbox: bbox,
+    earcut: earcut, solidOutline: solidOutline, knitTexture: knitTexture, knitHeight: knitHeight, polyArea: polyArea, ensureCCW: ensureCCW, cleanPoly: cleanPoly, pointInPoly: pointInPoly, bbox: bbox,
     smoothOutline: smoothOutline, simplifyClosed: simplifyClosed, rdp: rdp, selfIntersects: selfIntersects, polysIntersect: polysIntersect,
     rectPts: rectPts, circlePts: circlePts, roundRectPts: roundRectPts, transformPts: transformPts,
     Mesh: Mesh, extrude: extrude, box: box, xCylinder: xCylinder, checkClosed: checkClosed, signedVolume: signedVolume,
@@ -2738,14 +2816,14 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
 
   /* ---------------- state ---------------- */
   var S = {
-    tiltStep: 15, handles: 'normal',
+    tiltStep: 15, handles: 'normal', knitTex: { type: 'knit', cell: 5, depth: 0.8 },
     plates: [{ id: 1, name: 'Main plate' }], plate: 1, multi: [], multiMode: false, groupNames: {}, tab: 'draw', view3d: false, tool: 'pen', fingerDraw: false, T: 4, lock: true, wall: 2, floorT: 2, openLine: false, lineW: 1.2, stand: { t: 5, taper: 100 }, loft: { hollow: false, wall: 2, floor: 2, dir: 'up' }, lastSave: {}, sphere: { d: 40, hollow: false, wall: 2, flat: 1 }, snap: true, rep: { mode: 'row', n: 4, dx: 15, dy: 15, cols: 3, rows: 2, ang: 360 }, spinAxis: 'left', jar: { d: 50, H: 60, wall: 2.4, pitch: 3, clr: 0.4 }, screw: { M: 3, head: 'csk', nut: false }, lid: { T: 2, lipH: 4, clr: 0.2, click: false }, fil: 1,
     filaments: ['#F5A04A', '#EDEDED', '#2B2B2B', '#3B7DD8'],
     shapes: [], sel: null, nextId: 1,
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.16';
+  var VERSION = '1.17';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
@@ -4110,6 +4188,33 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     changed(true);
     toast(same ? 'The original shapes are back.' : 'The original shapes are back at their original size and angle, where the object is now (it was resized or turned after combining).', 6000);
   }
+  /* ---------------- knit texture over a whole object ---------------- */
+  function texBaseNow(s) { // the smooth shape it had before texturing, moved to where the object is now
+    var tb = s.texBase, m = new G.Mesh(); m.v = tb.v.slice(); m.f = tb.f; if (tb.fc) m.fc = tb.fc;
+    var b = meshOf(s).bounds(), o = tb.box, dx = (b[0] + b[3]) / 2 - (o[0] + o[3]) / 2, dy = (b[1] + b[4]) / 2 - (o[1] + o[4]) / 2, dz = b[2] - o[2];
+    m.transform(function (x, y, z) { return [x + dx, y + dy, z + dz]; });
+    return m;
+  }
+  function knitShape(s) {
+    if (s.compound) return toast('Texture the pieces before combining them (Undo the combine, texture, then combine again).', 6000);
+    toMeshShape(s);
+    var K = S.knitTex, src = s.texBase ? texBaseNow(s) : meshOf(s);
+    toast('Knitting\u2026 this can take a few seconds on big models.', 4000);
+    setTimeout(function () {
+      var m; try { m = G.knitTexture(src, { type: K.type, cell: K.cell, depth: K.depth }); } catch (e) { return toast('Could not texture that model.'); }
+      snapshot();
+      if (!s.texBase) { var b0 = src.bounds(); s.texBase = { v: src.v.slice(), f: src.f, fc: src.fc, box: b0 }; }
+      s.mesh = { v: m.v.map(function (x) { return Math.round(x * 1e4) / 1e4; }), f: m.f, fc: m.fc };
+      refreshSilhouette(s); changed(true);
+      toast('Covered in ' + (K.type === 'ribbing' ? 'ribbing' : 'knit stitches') + ' (' + Math.round(m.f.length / 3000) + 'k triangles). The bottom stays smooth so it sits flat.', 6000);
+    }, 30);
+  }
+  function unknitShape(s) {
+    if (!s.texBase) return;
+    snapshot(); var m = texBaseNow(s);
+    s.mesh = { v: m.v, f: m.f, fc: m.fc }; delete s.texBase; refreshSilhouette(s); changed(true);
+    toast('Texture removed.');
+  }
   function splitBack(s) { // a combined object back into one object per color, grouped
     var pcs = splitCompound(s); if (pcs.length < 2) return toast('This object is all one color already.');
     snapshot();
@@ -5214,6 +5319,10 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
         seg('shp.edgeB', 'Bottom edge', EO) + (shp(s, 'edgeB') !== 'none' ? stepper('shp.edgeBs', 'Bottom edge size', 'mm', 0.2, 0.2, 50, 1) : '') +
         '<p class="note">' + (shp(s, 'edgeB') === 'bevel' ? 'A small bottom bevel (0.4–0.8 mm) stops the first layer from bulging out.' : 'Round softens the edge; bevel cuts it at 45°. A small bottom bevel stops the first layer bulging out.') + '</p></div>';
     }
+    if (!isHole) h += '<div class="box"><h3>Knit texture (whole object)</h3><p class="note">Covers the whole object in stitches, like a knitted toy. The bottom stays smooth so it sits flat.</p>' +
+      seg('knitTex.type', 'Stitch', [['knit', 'Knit'], ['ribbing', 'Ribbing']]) + stepper('knitTex.cell', 'Stitch size', 'mm', 0.5, 2, 15, 1) + stepper('knitTex.depth', 'Depth', 'mm', 0.1, 0.2, 2, 1) +
+      '<button class="ghost" data-act="knit-tex">' + (s.texBase ? 'Redo the texture' : 'Cover it in stitches') + '</button>' + (s.texBase ? '<button class="ghost" data-act="unknit-tex">Remove the texture</button>' : '') +
+      '<p class="note">4\u20136 mm stitches and 0.6\u20131.0 mm depth look most like yarn. Print in matte filament with 0.12\u20130.16 mm layers.' + (isMesh ? '' : ' This turns the shape into a solid model.') + '</p></div>';
     h += '<div class="box"><h3>Cut</h3><p class="note">Slice this ' + (isMesh ? 'model' : 'shape') + ' flat across or straight down, and keep one or both pieces.</p><button class="ghost" data-act="cut-start">Cut this object</button></div>';
     if (!isHole) h += '<div class="box"><h3>Connect</h3><p class="note">Join this to another object with a hinge, a slide, pegs or magnets.</p><button class="ghost" data-act="conn-new">Connect to another object</button>' +
       (connsOn(s.id).length ? '<p class="note">Connected: ' + connsOn(s.id).map(function (c) { return esc(CONN_NAMES[c.type]); }).join(', ') + '. Pick it in the Object list to change it.</p>' : '') + '</div>';
@@ -5612,6 +5721,8 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       case 'm-combine': combineSel(); break;
       case 'split-back': if (s && s.compound) splitBack(s); break;
       case 'uncombine': if (s && s.compound) uncombine(s); break;
+      case 'knit-tex': if (s && s.role !== 'hole') knitShape(s); break;
+      case 'unknit-tex': if (s && s.texBase) unknitShape(s); break;
       case 'dec-jarfit': if (s && s.kind === 'decal') { snapshot(); fitJarDecal(s); changed(true); } break;
       case 'dsrc-pattern': if (s && s.kind === 'decal') { snapshot(); s.src = 'pattern'; if (!s.ph) s.ph = Math.round((s.w || 40) * 0.6); fitJarDecal(s); changed(true); } break;
       case 'add-box': addSolid('rect'); break;
