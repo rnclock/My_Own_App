@@ -2,6 +2,8 @@
 
 **Version 1.16**
 
+📖 **[User guide](USER_GUIDE.md)**: how to use every feature of PrintSketch.
+
 PrintSketch is a tablet-friendly app for designing 3D prints for Bambu Lab printers. This repository holds only the finished app, published with GitHub Pages so it can be installed and used offline.
 
 **Open it:** https://rnclock.github.io/My_Own_App/
