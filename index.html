@@ -2743,7 +2743,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.13';
+  var VERSION = '1.14';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
@@ -4067,7 +4067,12 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     var m = mergePieces(parts, base);
     var g0 = solids[0].grp, nm = (g0 && S.groupNames[g0]) || solids.filter(function (s) { return s.name; }).map(function (s) { return s.name; })[0] || 'Combined object';
     snapshot();
-    var sh = meshShape(m, nm, { fil: base, compound: true, pieces: m.pieces });
+    // remember the original shapes, so the combine can be undone any time later
+    var keepIds = {}; solids.concat(holes).forEach(function (s) { keepIds[s.id] = 1; });
+    var orig = S.shapes.filter(function (s) { return keepIds[s.id] || (s.kind === 'decal' && keepIds[s.target]) || (s.kind === 'conn' && keepIds[s.a] && keepIds[s.b]); }).map(cleanShape);
+    var grpNames = {}; orig.forEach(function (s) { if (s.grp && S.groupNames[s.grp]) grpNames[s.grp] = S.groupNames[s.grp]; });
+    var b0 = m.bounds();
+    var sh = meshShape(m, nm, { fil: base, compound: true, pieces: m.pieces, orig: JSON.parse(JSON.stringify(orig)), origNames: grpNames, origBox: b0.map(function (x) { return Math.round(x * 1e3) / 1e3; }) });
     if (m.fc) sh.mesh.fc = m.fc;
     var gone = {}; solids.concat(holes).forEach(function (s) { gone[s.id] = 1; });
     S.shapes.forEach(function (s) { if (s.kind === 'decal' && gone[s.target]) gone[s.id] = 1; });
@@ -4078,6 +4083,30 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     S.shapes = S.shapes.filter(function (s) { return !gone[s.id]; });
     S.sel = sh.id; S.multi = []; changed(true);
     toast('Combined into one object, keeping its colors' + (holes.length ? ', holes' : '') + ' and inlays. You can now connect, cut or tilt it. Undo splits it back.', 6000);
+  }
+  /* bring back the shapes a combined object was made from, where the object is now */
+  function uncombine(s) {
+    if (!s.orig || !s.orig.length) return toast('This object doesn\u2019t remember its original shapes (it was combined with an older version).', 6000);
+    var b = meshOf(s).bounds(), o = s.origBox || b, same = Math.abs((b[3] - b[0]) - (o[3] - o[0])) < 0.05 && Math.abs((b[4] - b[1]) - (o[4] - o[1])) < 0.05 && Math.abs((b[5] - b[2]) - (o[5] - o[2])) < 0.05;
+    var dx = (b[0] + b[3]) / 2 - (o[0] + o[3]) / 2, dy = (b[1] + b[4]) / 2 - (o[1] + o[4]) / 2, dz = b[2] - o[2];
+    snapshot();
+    var map = {}, gmap = {}, made = [];
+    s.orig.forEach(function (x) { map[x.id] = S.nextId++; });
+    s.orig.forEach(function (x0) {
+      var x = JSON.parse(JSON.stringify(x0)); x.id = map[x0.id]; x.plate = s.plate;
+      if (x.kind === 'decal') x.target = map[x.target];
+      if (x.kind === 'conn') { x.a = map[x.a]; x.b = map[x.b]; }
+      if (x.grp) { if (!gmap[x.grp]) { gmap[x.grp] = (Date.now() % 1000000000) + made.length + 29; S.groupNames[gmap[x.grp]] = (s.origNames || {})[x.grp] || s.name || 'Group'; } x.grp = gmap[x.grp]; }
+      S.shapes.push(x); made.push(x);
+    });
+    made.forEach(function (x) { if (x.kind === 'decal' || x.kind === 'conn') return; mapShape(x, function (px, py) { return [px + dx, py + dy]; }); if (Math.abs(dz) > 1e-6) shiftZ(x, dz); touch(x); });
+    var firstSolid = made.filter(function (x) { return x.kind !== 'decal' && x.kind !== 'conn' && x.role !== 'hole'; })[0];
+    S.shapes.forEach(function (c) { if (c.kind === 'conn' && firstSolid) { if (c.a === s.id) c.a = firstSolid.id; if (c.b === s.id) c.b = firstSolid.id; } });
+    S.shapes = S.shapes.filter(function (x) { return x !== s && !(x.kind === 'decal' && x.target === s.id); });
+    var sel = made.filter(function (x) { return x.kind !== 'decal' && x.kind !== 'conn'; }).map(function (x) { return x.id; });
+    S.sel = sel[0] || null; S.multi = sel.length > 1 ? sel : [];
+    changed(true);
+    toast(same ? 'The original shapes are back.' : 'The original shapes are back at their original size and angle, where the object is now (it was resized or turned after combining).', 6000);
   }
   function splitBack(s) { // a combined object back into one object per color, grouped
     var pcs = splitCompound(s); if (pcs.length < 2) return toast('This object is all one color already.');
@@ -5128,7 +5157,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     if (s.kind === 'free') h += '<div class="field"><div class="row"><label class="lbl" for="sl-smooth">Smoothing</label><span class="val" id="val-S-smooth">' + showVal['S.smooth'](s.smooth) + '</span></div>' +
       '<input type="range" id="sl-smooth" data-range="S.smooth" data-shape="1" min="0" max="100" step="1" value="' + s.smooth + '"></div>';
     var isHole = s.role === 'hole', isMesh = s.kind === 'mesh';
-    if (isMesh) h += '<p class="note">' + (s.compound ? 'A combined object: its colored pieces stay together as one.' : 'Resize it, move it, add shapes to it, or put a hole shape over it to cut into it.') + '</p>' + (s.compound ? '<div class="btns"><button class="ghost" data-act="split-back">Split into pieces by color</button></div>' : '');
+    if (isMesh) h += '<p class="note">' + (s.compound ? 'A combined object: its colored pieces stay together as one.' : 'Resize it, move it, add shapes to it, or put a hole shape over it to cut into it.') + '</p>' + (s.compound ? (s.orig && s.orig.length ? '<div class="btns"><button class="ghost" data-act="uncombine">Undo the combine</button></div><p class="note">Brings back the shapes it was made from, so you can change them again.</p>' : '') + '<div class="btns"><button class="ghost" data-act="split-back">Split into pieces by color</button></div>' : '');
     if (!isMesh) h += '<div class="field"><span class="lbl">This shape is</span><div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))">' +
       '<button data-act="role-solid" class="' + (!isHole ? 'on' : '') + '">Solid</button><button data-act="role-hole" class="' + (isHole ? 'on' : '') + '">A hole</button></div>' +
       (isHole ? '<p class="note">A hole cuts away any solid shape it overlaps.</p>' : '') + '</div>';
@@ -5562,6 +5591,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       case 'dsrc-shape': if (s && s.kind === 'decal') { s.src = 'shape'; changed(true); } break;
       case 'm-combine': combineSel(); break;
       case 'split-back': if (s && s.compound) splitBack(s); break;
+      case 'uncombine': if (s && s.compound) uncombine(s); break;
       case 'dec-jarfit': if (s && s.kind === 'decal') { snapshot(); fitJarDecal(s); changed(true); } break;
       case 'dsrc-pattern': if (s && s.kind === 'decal') { snapshot(); s.src = 'pattern'; if (!s.ph) s.ph = Math.round((s.w || 40) * 0.6); fitJarDecal(s); changed(true); } break;
       case 'add-box': addSolid('rect'); break;
