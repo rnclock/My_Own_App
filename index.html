@@ -2743,7 +2743,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.11';
+  var VERSION = '1.12';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
@@ -3757,8 +3757,10 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       var m = meshOf(s);
       ['less', 'more'].forEach(function (side) {
         if (C.keep !== 'both' && C.keep !== side) return;
-        var part = G.clipMeshAxis(m, C.axis, C.pos + (side === 'less' ? 1e-5 : -1e-5), side === 'less');
-        if (part.f.length) pieces.push({ side: side, props: { kind: 'mesh', mesh: { v: part.v, f: part.f } } });
+        var at = C.pos + (side === 'less' ? 1e-5 : -1e-5), part;
+        if (s.compound) part = mergePieces(splitCompound(s).map(function (pc) { return { fil: pc.fil, mesh: G.clipMeshAxis(pc.mesh, C.axis, at, side === 'less') }; }).filter(function (pc) { return pc.mesh.f.length; }), filOf(s));
+        else part = G.clipMeshAxis(m, C.axis, at, side === 'less');
+        if (part.f.length) pieces.push({ side: side, props: { kind: 'mesh', mesh: { v: part.v, f: part.f, fc: part.fc }, pieces: part.pieces } });
       });
     } else if (C.axis === 'z') {
       var z0 = s.z || 0, top = objTop(s);
@@ -3892,6 +3894,11 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       var f = filOf(s), idx = order.indexOf(s.id);
       var over = gr.mem.filter(function (o) { return filOf(o) !== f && o.kind !== 'mesh' && order.indexOf(o.id) > idx; })
         .map(function (o) { var z0 = o.z || 0; return { pts: outline(o), z0: z0, z1: z0 + Math.max(0.2, o.h || S.T) }; });
+      if (s.compound) {
+        var pcs = splitCompound(s), own = pcs.filter(function (pc) { return pc.fil === f; })[0] || pcs[0];
+        objs[s.id] = { fil: own.fil, mesh: G.cutMesh(own.mesh, base), extra: pcs.filter(function (pc) { return pc !== own; }).map(function (pc) { return { fil: pc.fil, mesh: G.cutMesh(pc.mesh, base) }; }) };
+        return;
+      }
       objs[s.id] = { fil: f, mesh: buildMeshFor([s], base.concat(over)), extra: [] };
     });
     conns.forEach(function (c) {
@@ -3954,13 +3961,78 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     L.mesh = place(L.mesh);
     L.extra.forEach(function (ex) { ex.mesh = place(ex.mesh); });
   }
+  /* ---------------- combined objects: one object made of several colored pieces ---------------- */
+  // a combined object keeps each color as its own closed piece inside one mesh (fc = that piece's filament, 0 = the object's own)
+  // the pieces are kept as runs of triangles (s.pieces), so painted colors inside a piece are left alone
+  function splitCompound(s) {
+    var m = s.mesh, base = filOf(s), runs = s.pieces;
+    if (!runs || !runs.length) { // older data: one run per color
+      runs = []; for (var q = 0; q < m.f.length / 3; q++) { var c = (m.fc && m.fc[q]) || base, last = runs[runs.length - 1]; if (last && last.fil === c) last.n++; else runs.push({ fil: c, start: q, n: 1 }); }
+    }
+    var out = {};
+    runs.forEach(function (r) {
+      var o = out[r.fil] = out[r.fil] || { fil: r.fil, mesh: new G.Mesh(), map: new Map(), fc: [], painted: false };
+      for (var t = r.start; t < r.start + r.n; t++) {
+        for (var k = 0; k < 3; k++) { var vi = m.f[t * 3 + k], ni = o.map.get(vi); if (ni == null) { ni = o.mesh.addV(m.v[vi * 3], m.v[vi * 3 + 1], m.v[vi * 3 + 2]); o.map.set(vi, ni); } o.mesh.f.push(ni); }
+        var pc = (m.fc && m.fc[t]) || base; o.fc.push(pc === r.fil ? 0 : pc); if (pc !== r.fil) o.painted = true;
+      }
+    });
+    return Object.keys(out).map(function (k) { var o = out[k]; if (o.painted) o.mesh.fc = o.fc; return { fil: o.fil, mesh: o.mesh }; });
+  }
+  function mergePieces(pieces, base) {
+    var m = new G.Mesh(), fc = [], runs = [];
+    pieces.forEach(function (pc) {
+      var off = m.v.length / 3; m.v = m.v.concat(pc.mesh.v);
+      runs.push({ fil: pc.fil, start: m.f.length / 3, n: pc.mesh.f.length / 3 });
+      for (var q = 0; q < pc.mesh.f.length; q += 3) { m.f.push(pc.mesh.f[q] + off, pc.mesh.f[q + 1] + off, pc.mesh.f[q + 2] + off); var c = (pc.mesh.fc && pc.mesh.fc[q / 3]) || pc.fil; fc.push(c === base ? 0 : c); }
+    });
+    if (fc.some(function (c) { return c; })) m.fc = fc;
+    m.pieces = runs;
+    return m;
+  }
+  function combineSel() {
+    var list = selList(), solids = list.filter(function (s) { return s.role !== 'hole'; }), holes = list.filter(function (s) { return s.role === 'hole'; });
+    if (!solids.length || list.length < 2) return toast('Select a group or several objects to combine.');
+    var allHoles = GS().filter(function (c) { return c.role === 'hole' && outline(c).length >= 3; });
+    var gr = { mem: solids, cuts: allHoles.filter(function (c) { return solids.some(function (s) { return touches(s, c); }); }) };
+    var parts;
+    try { parts = buildGroupMesh(gr); } catch (e) { return toast('Could not combine those.'); }
+    parts = parts.filter(function (p) { return p.mesh.f.length; });
+    if (!parts.length) return toast('Nothing to combine.');
+    var vol = {}; parts.forEach(function (p) { vol[p.fil] = (vol[p.fil] || 0) + Math.abs(G.signedVolume(p.mesh)); });
+    var base = +Object.keys(vol).sort(function (a, b) { return vol[b] - vol[a]; })[0];
+    var m = mergePieces(parts, base);
+    var g0 = solids[0].grp, nm = (g0 && S.groupNames[g0]) || solids.filter(function (s) { return s.name; }).map(function (s) { return s.name; })[0] || 'Combined object';
+    snapshot();
+    var sh = meshShape(m, nm, { fil: base, compound: true, pieces: m.pieces });
+    if (m.fc) sh.mesh.fc = m.fc;
+    var gone = {}; solids.concat(holes).forEach(function (s) { gone[s.id] = 1; });
+    S.shapes.forEach(function (s) { if (s.kind === 'decal' && gone[s.target]) gone[s.id] = 1; });
+    S.shapes.forEach(function (c) { // connections inside the group are now part of the shape; ones to other objects follow it
+      if (c.kind !== 'conn') return;
+      if (gone[c.a] && gone[c.b]) gone[c.id] = 1; else { if (gone[c.a]) c.a = sh.id; if (gone[c.b]) c.b = sh.id; }
+    });
+    S.shapes = S.shapes.filter(function (s) { return !gone[s.id]; });
+    S.sel = sh.id; S.multi = []; changed(true);
+    toast('Combined into one object, keeping its colors' + (holes.length ? ', holes' : '') + ' and inlays. You can now connect, cut or tilt it. Undo splits it back.', 6000);
+  }
+  function splitBack(s) { // a combined object back into one object per color, grouped
+    var pcs = splitCompound(s); if (pcs.length < 2) return toast('This object is all one color already.');
+    snapshot();
+    var gid = Date.now() % 1000000000, ids = [];
+    pcs.forEach(function (pc) { var x = meshShape(pc.mesh, (s.name || 'Piece') + ' (filament ' + pc.fil + ')', { fil: pc.fil, grp: gid }); x.plate = s.plate; ids.push(x.id); });
+    S.groupNames[gid] = s.name || 'Group';
+    S.shapes = S.shapes.filter(function (x) { return x !== s && !(x.kind === 'decal' && x.target === s.id); });
+    S.sel = ids[0]; S.multi = ids; changed(true);
+  }
   function buildByColor(gr) {
     var fils = [];
-    gr.mem.forEach(function (s) { var f = filOf(s); if (fils.indexOf(f) < 0) fils.push(f); });
+    gr.mem.forEach(function (s) { (s.compound ? splitCompound(s).map(function (pc) { return pc.fil; }) : [filOf(s)]).forEach(function (f) { if (fils.indexOf(f) < 0) fils.push(f); }); });
     var base = cutList(gr), order = S.shapes.map(function (s) { return s.id; });
-    if (fils.length === 1) return [{ fil: fils[0], mesh: buildMeshFor(gr.mem, base) }];
+    if (fils.length === 1 && !gr.mem.some(function (s) { return s.compound; })) return [{ fil: fils[0], mesh: buildMeshFor(gr.mem, base) }];
     var by = {};
     gr.mem.forEach(function (s) {
+      if (s.compound) { splitCompound(s).forEach(function (pc) { (by[pc.fil] = by[pc.fil] || new G.Mesh()).append(G.cutMesh(pc.mesh, base)); }); return; }
       var f = filOf(s), idx = order.indexOf(s.id);
       var over = gr.mem.filter(function (o) { return filOf(o) !== f && o.kind !== 'mesh' && order.indexOf(o.id) > idx; })
         .map(function (o) { var z0 = o.z || 0; return { pts: outline(o), z0: z0, z1: z0 + Math.max(0.2, o.h || S.T) }; });
@@ -4993,7 +5065,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     if (s.kind === 'free') h += '<div class="field"><div class="row"><label class="lbl" for="sl-smooth">Smoothing</label><span class="val" id="val-S-smooth">' + showVal['S.smooth'](s.smooth) + '</span></div>' +
       '<input type="range" id="sl-smooth" data-range="S.smooth" data-shape="1" min="0" max="100" step="1" value="' + s.smooth + '"></div>';
     var isHole = s.role === 'hole', isMesh = s.kind === 'mesh';
-    if (isMesh) h += '<p class="note">Resize it, move it, add shapes to it, or put a hole shape over it to cut into it.</p>';
+    if (isMesh) h += '<p class="note">' + (s.compound ? 'A combined object: its colored pieces stay together as one.' : 'Resize it, move it, add shapes to it, or put a hole shape over it to cut into it.') + '</p>' + (s.compound ? '<div class="btns"><button class="ghost" data-act="split-back">Split into pieces by color</button></div>' : '');
     if (!isMesh) h += '<div class="field"><span class="lbl">This shape is</span><div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))">' +
       '<button data-act="role-solid" class="' + (!isHole ? 'on' : '') + '">Solid</button><button data-act="role-hole" class="' + (isHole ? 'on' : '') + '">A hole</button></div>' +
       (isHole ? '<p class="note">A hole cuts away any solid shape it overlaps.</p>' : '') + '</div>';
@@ -5148,6 +5220,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     if (sameGrp) h += '<div class="field"><label class="lbl" for="gname">Group name</label><input type="text" id="gname" class="txt" data-gname="' + g0 + '" maxlength="40" value="' + esc(S.groupNames[g0] || '') + '" placeholder="Group" autocomplete="off"></div>';
     h += '<p class="note">' + list.map(function (s) { return esc(shapeLabel(s).split(' · ')[0]); }).join(', ') + '</p>';
     h += '<div class="btns">' + (sameGrp ? '<button class="ghost" data-act="m-ungroup">Ungroup</button>' + (list.every(function (x) { return x.kind !== 'mesh'; }) ? '<button class="ghost" data-act="m-to-inlay">Use as inlay →</button>' : '') : '<button class="primary" data-act="m-group">Group them</button>') + '</div>';
+    if (list.some(function (x) { return x.role !== 'hole'; })) h += '<div class="box"><h3>Combine into one object</h3><p class="note">Joins these into a single object, keeping their colors, holes and inlays, so you can connect it, cut it, tilt it and use the other single-object tools. Undo splits it back.</p><button class="ghost" data-act="m-combine">Combine into one object</button></div>';
     h += '<div class="box"><h3>Size (all together)</h3>' + stepper('multi.w', 'X · width', 'mm', 1, 0.5, 256, 1) + stepper('multi.d', 'Y · depth', 'mm', 1, 0.5, 256, 1) +
       toggle('lock', 'Keep proportions when resizing') + stepper('multi.h', 'Z · height', 'mm', 1, 0.2, 256, 1) + stepper('multi.z', 'Raised off the plate', 'mm', 0.5, -255, 255, 1) + '</div>';
     h += '<div class="box"><h3>Position <span class="note" style="font-weight:400">(center of the selection)</span></h3>' + stepper('multi.cx', 'X', 'mm', 1, -300, 300, 1) + stepper('multi.cy', 'Y', 'mm', 1, -300, 300, 1) + '</div>';
@@ -5418,6 +5491,8 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       case 'drotL': case 'drotR': if (s && s.kind === 'decal') { snapshot(); s.rot = ((s.rot || 0) + (a === 'drotL' ? 15 : 345)) % 360; changed(true); } break;
       case 'dsrc-text': if (s && s.kind === 'decal') { snapshot(); s.src = 'text'; if (!s.text) s.text = 'TEXT'; changed(true); } break;
       case 'dsrc-shape': if (s && s.kind === 'decal') { s.src = 'shape'; changed(true); } break;
+      case 'm-combine': combineSel(); break;
+      case 'split-back': if (s && s.compound) splitBack(s); break;
       case 'dec-jarfit': if (s && s.kind === 'decal') { snapshot(); fitJarDecal(s); changed(true); } break;
       case 'dsrc-pattern': if (s && s.kind === 'decal') { snapshot(); s.src = 'pattern'; if (!s.ph) s.ph = Math.round((s.w || 40) * 0.6); fitJarDecal(s); changed(true); } break;
       case 'add-box': addSolid('rect'); break;
