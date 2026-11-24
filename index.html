@@ -2737,13 +2737,13 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   /* ---------------- state ---------------- */
   var S = {
     tiltStep: 15, handles: 'normal',
-    plates: [{ id: 1, name: 'Main plate' }], plate: 1, multi: [], multiMode: false, groupNames: {}, tab: 'draw', view3d: false, tool: 'pen', fingerDraw: false, T: 4, lock: true, wall: 2, floorT: 2, openLine: false, lineW: 1.2, stand: { t: 5, taper: 100 }, loft: { hollow: false, wall: 2, floor: 2 }, lastSave: {}, sphere: { d: 40, hollow: false, wall: 2, flat: 1 }, snap: true, rep: { mode: 'row', n: 4, dx: 15, dy: 15, cols: 3, rows: 2, ang: 360 }, spinAxis: 'left', jar: { d: 50, H: 60, wall: 2.4, pitch: 3, clr: 0.4 }, screw: { M: 3, head: 'csk', nut: false }, lid: { T: 2, lipH: 4, clr: 0.2, click: false }, fil: 1,
+    plates: [{ id: 1, name: 'Main plate' }], plate: 1, multi: [], multiMode: false, groupNames: {}, tab: 'draw', view3d: false, tool: 'pen', fingerDraw: false, T: 4, lock: true, wall: 2, floorT: 2, openLine: false, lineW: 1.2, stand: { t: 5, taper: 100 }, loft: { hollow: false, wall: 2, floor: 2, dir: 'up' }, lastSave: {}, sphere: { d: 40, hollow: false, wall: 2, flat: 1 }, snap: true, rep: { mode: 'row', n: 4, dx: 15, dy: 15, cols: 3, rows: 2, ang: 360 }, spinAxis: 'left', jar: { d: 50, H: 60, wall: 2.4, pitch: 3, clr: 0.4 }, screw: { M: 3, head: 'csk', nut: false }, lid: { T: 2, lipH: 4, clr: 0.2, click: false }, fil: 1,
     filaments: ['#F5A04A', '#EDEDED', '#2B2B2B', '#3B7DD8'],
     shapes: [], sel: null, nextId: 1,
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.14';
+  var VERSION = '1.15';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
@@ -4856,10 +4856,26 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       return x.kind !== 'decal' && x.kind !== 'conn';
     });
     if (l.length < 2) return toast('Select two or more drawn outlines.' + (left.length ? ' Left out: ' + left.join('; ') + '.' : ''), 8000);
-    var zs = l.map(function (x) { return x.z || 0; });
-    if (zs.some(function (z, i) { return zs.indexOf(z) !== i; })) return toast('Give each outline its own height with Raised off the plate. The blend runs from the lowest to the highest.', 6000);
-    var L = S.loft, m;
-    try { m = G.loft(l.map(function (x) { return { pts: blendSlice(x), z: x.z || 0 }; }), { hollow: L.hollow, wall: L.wall, floor: L.floor }); } catch (e) { return toast('Could not blend those outlines.'); }
+    var L = S.loft, m, dir = L.dir || 'up';
+    if (dir === 'up') {
+      var zs = l.map(function (x) { return x.z || 0; });
+      if (zs.some(function (z, i) { return zs.indexOf(z) !== i; })) return toast('Give each outline its own height with Raised off the plate. The blend runs from the lowest to the highest.', 6000);
+      try { m = G.loft(l.map(function (x) { return { pts: blendSlice(x), z: x.z || 0 }; }), { hollow: L.hollow, wall: L.wall, floor: L.floor }); } catch (e) { return toast('Could not blend those outlines.'); }
+    } else {
+      // side to side: each outline is an end view (across = width, up the screen = height), laid out in a row; spacing = length
+      var ax = dir === 'x' ? 0 : 1, info = l.map(function (x) { var pts = blendSlice(x), b = G.bbox([pts]); return { pts: pts, b: b, at: ax ? b.cy : b.cx, lift: x.z || 0 }; });
+      info.sort(function (p, q) { return p.at - q.at; });
+      if (info.some(function (p, i) { return i && p.at - info[i - 1].at < 0.5; })) return toast(dir === 'x' ? 'Spread the outlines out left to right: the space between them is the length of the part.' : 'Spread the outlines out front to back: the space between them is the length of the part.', 6000);
+      var mid = info.reduce(function (s, p) { return s + (ax ? p.b.cx : p.b.cy); }, 0) / info.length;
+      try {
+        m = G.loft(info.map(function (p) { return { pts: p.pts.map(function (q) { return [q[0] - p.b.cx, q[1] - p.b.minY + p.lift]; }), z: p.at }; }), { hollow: false });
+      } catch (e) { return toast('Could not blend those outlines.'); }
+      if (m && m.f.length) {
+        if (ax === 0) m.transform(function (u, v, w) { return [w, -u + mid, v]; }); // left to right: across the drawing becomes front-to-back
+        else m.transform(function (u, v, w) { return [u + mid, w, v]; });
+        if (G.signedVolume(m) < 0) G.meshFlipWinding(m);
+      }
+    }
     if (!m || !m.f.length) return toast('Could not blend those outlines.');
     if (m.wallTooThick) toast('The wall was too thick for one of the outlines, so it was left solid.', 5000);
     snapshot();
@@ -5325,7 +5341,9 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     h += '<div class="field"><span class="lbl">Line up</span><div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))"><button data-act="al-l">Left</button><button data-act="al-cx">Center</button><button data-act="al-r">Right</button><button data-act="al-t">Top</button><button data-act="al-cy">Middle</button><button data-act="al-b">Bottom</button></div></div>';
     if (list.length > 2) h += '<div class="field"><span class="lbl">Spread out evenly</span><div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button data-act="sp-x">Left to right</button><button data-act="sp-y">Bottom to top</button></div></div>';
     if (list.filter(function (x) { return x.kind !== 'mesh' && x.role !== 'hole'; }).length >= 2) h += '<div class="box"><h3>Blend between shapes</h3><p class="note">Makes one smooth solid passing through each outline at its height (set each one\u2019s <b>Raised off the plate</b>). Great for hulls, bottles and vases that aren\u2019t round.</p>' +
-      toggle('loft.hollow', 'Hollow, open at the top') + (S.loft.hollow ? stepper('loft.wall', 'Wall thickness', 'mm', 0.4, 0.8, 20, 1) + stepper('loft.floor', 'Floor thickness', 'mm', 0.4, 0.4, 50, 1) : '') +
+      seg('loft.dir', 'Direction', [['up', 'Up (by height)'], ['x', 'Left to right'], ['y', 'Front to back']]) +
+      ((S.loft.dir || 'up') === 'up' ? toggle('loft.hollow', 'Hollow, open at the top') + (S.loft.hollow ? stepper('loft.wall', 'Wall thickness', 'mm', 0.4, 0.8, 20, 1) + stepper('loft.floor', 'Floor thickness', 'mm', 0.4, 0.4, 50, 1) : '') :
+        '<p class="note">Each outline is an end view of the part: across is its width, up the screen is its height. Lay them in a row ' + (S.loft.dir === 'x' ? 'left to right' : 'front to back') + '; the spaces between them set the length. Raised off the plate lifts a slice (for a keel, lift the shallow end slices). To hollow it, cut it with Cut after blending or put a hole shape inside.</p>') +
       '<button class="ghost" data-act="blend">Blend them</button></div>';
     h += '<div class="field"><span class="lbl">Turn together</span><div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button data-act="m-rotL">⟲ 15°</button><button data-act="m-rotR">⟳ 15°</button></div></div>';
     h += '<div class="field"><div class="row"><span class="lbl">Color for all</span><button class="linkbtn" data-act="edit-colors">Edit colors</button></div><div class="swatches">' +
