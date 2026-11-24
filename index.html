@@ -2743,7 +2743,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.12';
+  var VERSION = '1.13';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
@@ -3801,7 +3801,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   var CONN_DEFAULTS = {
     hinge: { style: 'pip', dia: 8, knuckles: 5, cover: 80, clr: 0.3, pin: 'fil', pinD: 1.75 },
     dovetail: { count: 1, neck: 8, wide: 12, depth: 6, clr: 0.25, shift: 0 },
-    pegs: { count: 2, dia: 5, len: 6, clr: 0.2 },
+    pegs: { count: 2, dia: 5, len: 6, clr: 0.2, where: 'top', face: 'auto', raise: 0, slide: 0 },
     magnets: { count: 2, dia: 6, thick: 2, clr: 0.2 }
   };
   var CONN_NAMES = { hinge: 'Hinge', dovetail: 'Dovetail slide', pegs: 'Alignment pegs', magnets: 'Magnet pockets' };
@@ -3823,11 +3823,69 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     else pts = fr.map(function (f) { return long ? [b.minX + b.w * f, b.cy] : [b.cx, b.minY + b.h * f]; });
     return pts.filter(function (p) { return G.pointInPoly(p[0], p[1], o); });
   }
+  /* pins for a flat piece (like a name) that stands against a side of another object:
+     holes go up into the flat piece's back and sideways into that side; pins join them */
+  function sidePins(A, B, P, r, bA, bB) {
+    var side = connSide(bA, bB), n = side === '+x' ? [-1, 0] : side === '-x' ? [1, 0] : side === '+y' ? [0, -1] : [0, 1]; // the side of B that faces A
+    var picked = { front: [0, -1], back: [0, 1], left: [-1, 0], right: [1, 0] }[P.face];
+    if (picked) n = picked;
+    var t = [-n[1], n[0]], dia = P.dia, rr = dia / 2 + P.clr, need = rr + 0.8;
+    var pa = picked ? [1, 0] : t, pu = picked ? [0, 1] : [-n[0], -n[1]]; // how the flat piece reads: left-to-right and its top, as laid out
+    var thickA = objTop(A) - (A.z || 0), dA = Math.min(P.len / 2, thickA - 0.6);
+    if (dA < 1) { r.warn = 'The flat piece is too thin for pin holes. Make it at least 2 mm thick.'; return r; }
+    // spots with enough material around them, spread along the piece
+    var regs = A.kind === 'mesh' ? (A.sil || []) : [{ outer: outline(A), holes: A.holes || [] }];
+    var edges = []; regs.forEach(function (rg) { [rg.outer].concat(rg.holes || []).forEach(function (ring) { for (var i = 0; i < ring.length; i++) edges.push([ring[i], ring[(i + 1) % ring.length]]); }); });
+    var inside = function (x, y) { var k = 0; regs.forEach(function (rg) { if (G.pointInPoly(x, y, rg.outer) && !(rg.holes || []).some(function (h) { return G.pointInPoly(x, y, h); })) k++; }); return k > 0; };
+    var room = function (x, y) { var d = 1e9; edges.forEach(function (e) { var ax = e[0][0], ay = e[0][1], ex = e[1][0] - ax, ey = e[1][1] - ay, L = ex * ex + ey * ey, u = L ? Math.max(0, Math.min(1, ((x - ax) * ex + (y - ay) * ey) / L)) : 0; d = Math.min(d, Math.hypot(x - ax - u * ex, y - ay - u * ey)); }); return d; };
+    var c0 = [bA.cx, bA.cy], ext = Math.abs(pa[0]) ? bA.w : bA.h, cand = [], spotsAll = [];
+    for (var y = bA.minY; y <= bA.maxY; y += 0.5) for (var x = bA.minX; x <= bA.maxX; x += 0.5) if (inside(x, y)) spotsAll.push([x, y, room(x, y)]);
+    // thinner pins when the strokes are narrow, down to 2 mm (1.75 mm filament)
+    while (true) { cand = spotsAll.filter(function (q) { return q[2] >= need; }); if (cand.length || dia <= 2) break; dia = Math.max(2, dia - 0.5); rr = dia / 2 + P.clr; need = rr + 0.8; }
+    if (!cand.length) { r.warn = 'The strokes are too narrow even for 2 mm pins. Make the letters bolder or bigger.'; return r; }
+    if (dia < P.dia) r.note = 'Pins made ' + fmt(dia) + ' mm to fit inside the strokes.';
+    if (picked && bA.h > bA.w * 1.3) r.warn = 'The piece is lying sideways. Turn it so it reads left to right across the plate, with its top toward the back.';
+    var along = function (p) { return (p[0] - c0[0]) * pa[0] + (p[1] - c0[1]) * pa[1]; }, up = function (p) { return (p[0] - c0[0]) * pu[0] + (p[1] - c0[1]) * pu[1]; };
+    var spots = [], cnt = Math.max(1, P.count);
+    for (var k = 0; k < cnt; k++) {
+      var target = -ext / 2 + ext * (k + 0.5) / cnt, best = null, bs = -1e9;
+      cand.forEach(function (p) { var sc = -Math.abs(along(p) - target) * 2 - Math.abs(up(p)) * 0.5 + p[2]; if (sc > bs && spots.every(function (q) { return Math.hypot(q[0] - p[0], q[1] - p[1]) > 2 * need; })) { bs = sc; best = p; } });
+      if (best) spots.push(best);
+    }
+    // where each spot lands on that side of B once the piece stands against it, centered on the side
+    var fc = [bB.cx + n[0] * bB.w / 2, bB.cy + n[1] * bB.h / 2], zc = ((B.z || 0) + objTop(B)) / 2, faceW = Math.abs(t[0]) ? bB.w : bB.h, faceH = objTop(B) - (B.z || 0);
+    var dB = Math.max(1, P.len - dA + 0.4);
+    spots.forEach(function (p) {
+      r.aCuts.push({ pts: G.circlePts(p[0], p[1], rr, 24), z0: (A.z || 0) - 1, z1: (A.z || 0) + dA });
+      var a = along(p) + (+P.slide || 0), b = up(p) + (+P.raise || 0), cx = fc[0] + t[0] * a, cy = fc[1] + t[1] * a, zz = zc + b;
+      if (Math.abs(a) > faceW / 2 - rr || Math.abs(b) > faceH / 2 - rr) r.warn = 'The piece is bigger than that side. Make it smaller, or the pins land off the edge.';
+      for (var s = 0; s < 8; s++) { // a round hole going sideways, built from thin slices
+        var z0 = -rr + 2 * rr * s / 8, z1 = -rr + 2 * rr * (s + 1) / 8, zm = Math.min(Math.abs(z0), Math.abs(z1)), hw = Math.sqrt(Math.max(0, rr * rr - zm * zm));
+        var p0 = [cx - t[0] * hw + n[0] * 0.5, cy - t[1] * hw + n[1] * 0.5], p1 = [cx + t[0] * hw + n[0] * 0.5, cy + t[1] * hw + n[1] * 0.5];
+        var p2 = [p1[0] - n[0] * (dB + 0.5), p1[1] - n[1] * (dB + 0.5)], p3 = [p0[0] - n[0] * (dB + 0.5), p0[1] - n[1] * (dB + 0.5)];
+        r.bCuts.push({ pts: [p0, p1, p2, p3], z0: zz + z0, z1: zz + z1 });
+      }
+    });
+    if (dia > 2.2) spots.forEach(function (p, i) { // printed pins, standing beside the piece
+      var px = bA.maxX + 5 + dia / 2 + i * (dia + 3), py = bA.minY + dia / 2;
+      if (px - dia / 2 < bB.maxX + 3 && px + dia / 2 > bB.minX - 3 && py + dia / 2 > bB.minY - 3 && py - dia / 2 < bB.maxY + 3) py = bA.minY - 5 - dia / 2; // not touching the other object
+      r.aAdd.append(G.extrude(G.circlePts(px, py, dia / 2 - 0.05, 32), [], 0, dA + dB - 0.4));
+    });
+    r.pins = spots.length; r.pinLen = dA + dB - 0.4; r.pinDia = dia;
+    if (spots.length < cnt && !r.warn) r.warn = 'Only room for ' + spots.length + ' pin' + (spots.length === 1 ? '' : 's') + ' at this size.';
+    return r;
+  }
   /* everything a connection adds or cuts, from the current positions of its two objects */
+  function fullBox(s) { // the whole footprint, including every island of a model (each letter of a combined name)
+    if (s.kind !== 'mesh' || !s.mesh) return shapeBox(s);
+    var v = s.mesh.v, x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (var i = 0; i < v.length; i += 3) { if (v[i] < x0) x0 = v[i]; if (v[i] > x1) x1 = v[i]; if (v[i + 1] < y0) y0 = v[i + 1]; if (v[i + 1] > y1) y1 = v[i + 1]; }
+    return { minX: x0, minY: y0, maxX: x1, maxY: y1, w: x1 - x0, h: y1 - y0, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 };
+  }
   function connGeom(c) {
     var A = shapeById(c.a), B = shapeById(c.b), r = { aAdd: new G.Mesh(), bAdd: new G.Mesh(), aCuts: [], bCuts: [], move: null, warn: '' };
     if (!A || !B) { r.warn = 'One of the two objects is gone.'; return r; }
-    var bA = shapeBox(A), bB = shapeBox(B), P = Object.assign({}, CONN_DEFAULTS[c.type], c);
+    var bA = fullBox(A), bB = fullBox(B), P = Object.assign({}, CONN_DEFAULTS[c.type], c);
     if (c.type === 'hinge' || c.type === 'dovetail') {
       var side = connSide(bA, bB), F = G.connFrame(side, side === '+x' ? bA.maxX : bA.minX, side === '+y' ? bA.maxY : bA.minY);
       var ra = uvRange(F, bA), rb = uvRange(F, bB), u0 = Math.max(ra.u0, rb.u0), u1 = Math.min(ra.u1, rb.u1), face = rb.v1;
@@ -3864,6 +3922,11 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
         r.warn = r.warn || 'Tap Line up to put the second object in the right spot for this joint.';
       }
       return r;
+    }
+    if (c.type === 'pegs' && P.where === 'side') { // the flatter object is the piece that stands against the other, whichever order they were picked in
+      if (objTop(A) - (A.z || 0) <= objTop(B) - (B.z || 0)) return sidePins(A, B, P, r, bA, bB);
+      var sw = sidePins(B, A, P, { aAdd: new G.Mesh(), bAdd: new G.Mesh(), aCuts: [], bCuts: [], move: null, warn: '' }, bB, bA);
+      r.aAdd = sw.bAdd; r.bAdd = sw.aAdd; r.aCuts = sw.bCuts; r.bCuts = sw.aCuts; r.warn = sw.warn; r.pins = sw.pins; r.pinLen = sw.pinLen; r.pinDia = sw.pinDia; r.note = sw.note; return r;
     }
     // pegs and magnets: second object stacks on top of the first, centers lined up
     var pts = spotPoints(A, P.count), dx = bB.cx - bA.cx, dy = bB.cy - bA.cy, topA = objTop(A), oB = outline(B);
@@ -5152,10 +5215,12 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       h += '<p class="note">Prints already slotted together. Slide the pieces apart and back up and down.</p>';
     } else {
       h += stepper('cn.count', 'How many', '', 1, 1, 4, 0);
-      if (c.type === 'pegs') h += stepper('cn.dia', 'Peg diameter', 'mm', 0.5, 2, 30, 1) + stepper('cn.len', 'Peg length', 'mm', 0.5, 1, 30, 1);
+      if (c.type === 'pegs') h += seg('cn.where', 'Where', [['top', 'Stacked on top'], ['side', 'On a side']]) +
+        (getPath('cn.where') === 'side' ? seg('cn.face', 'Which side', [['auto', 'Facing it'], ['front', 'Front'], ['back', 'Back'], ['left', 'Left'], ['right', 'Right']]) +
+          stepper('cn.raise', 'Raise or lower on the side', 'mm', 1, -150, 150, 1) + stepper('cn.slide', 'Slide along the side', 'mm', 1, -150, 150, 1) : '') + stepper('cn.dia', getPath('cn.where') === 'side' ? 'Pin diameter' : 'Peg diameter', 'mm', 0.5, 1.5, 30, 1) + stepper('cn.len', getPath('cn.where') === 'side' ? 'Pin length' : 'Peg length', 'mm', 0.5, 1, 30, 1);
       else h += stepper('cn.dia', 'Magnet diameter', 'mm', 0.5, 2, 40, 1) + stepper('cn.thick', 'Magnet thickness', 'mm', 0.5, 0.5, 20, 1);
       h += slider('cn.clr', 'Extra room for an easy fit', 0.05, 0.5, 0.05, function (v) { return fmt(v, 2) + ' mm'; });
-      h += '<p class="note">' + (c.type === 'pegs' ? 'Pegs stand on top of the first object. The second object gets matching holes underneath, so it sits on top lined up.' : 'Pockets go into the top of the first object and the bottom of the second. Glue the magnets in, checking which way they pull.') + '</p>';
+      h += '<p class="note">' + (c.type === 'pegs' ? (getPath('cn.where') === 'side' ? 'For a flat piece (like a name) that stands against a side of the other object. ' + (getPath('cn.face') !== 'auto' ? 'Lay it flat anywhere, reading the right way from the front of the plate.' : 'Lay it flat in front of that side, reading the right way, with its top toward the object.') + ' Raise or slide it on the side with the settings above. Holes go up into its back and sideways into the side' + (g.pins ? ' (' + g.pins + ' pin' + (g.pins > 1 ? 's' : '') + ', ' + fmt(g.pinLen) + ' mm long' + ((g.pinDia || getPath('cn.dia')) > 2.2 ? ', printed beside the piece' : ': use 1.75 mm filament') + (g.note ? '; ' + g.note.charAt(0).toLowerCase() + g.note.slice(1).replace(/\.$/, '') : '') + ')' : '') + '. Glue it on with the pins in.' : 'Pegs stand on top of the first object. The second object gets matching holes underneath, so it sits on top lined up.') : 'Pockets go into the top of the first object and the bottom of the second. Glue the magnets in, checking which way they pull.') + '</p>';
     }
     h += btns;
     if (!S.view3d) h += '<div class="btns"><button class="ghost" data-act="view3d">See in 3D</button></div>';
@@ -5204,6 +5269,10 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
         var bid = +$('#ctB').value; m.classList.remove('show');
         snapshot();
         var c = { id: S.nextId++, kind: 'conn', type: type, a: src.id, b: bid, raw: [], holes: [], role: 'solid', z: 0, h: 0 };
+        if (type === 'pegs') { // side by side on the plate: pins go into a side; one over the other: stacked
+          var ba = fullBox(src), bb = fullBox(shapeById(bid)) || ba, over = ba.minX < bb.maxX && bb.minX < ba.maxX && ba.minY < bb.maxY && bb.minY < ba.maxY;
+          c.where = over ? 'top' : 'side';
+        }
         addObj(c); S.sel = c.id; S.hingeAngle = 0;
         var g = connGeom(c); if (g.move) moveObj(shapeById(bid), g.move);
         S.view3d = true;
