@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>PrintSketch</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,800&family=Oswald:wght@400;700&family=Bebas+Neue&family=Roboto+Slab:wght@400;800&family=Playfair+Display:ital,wght@0,400;0,800;1,400;1,800&family=Cinzel:wght@400;800&family=Fredoka:wght@400;700&family=Orbitron:wght@400;800&family=Black+Ops+One&family=Permanent+Marker&family=Pacifico&family=Dancing+Script:wght@400;700&family=Lobster&family=Press+Start+2P&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,800&family=Oswald:wght@400;700&family=Bebas+Neue&family=Roboto+Slab:wght@400;800&family=Playfair+Display:ital,wght@0,400;0,800;1,400;1,800&family=Cinzel:wght@400;800&family=Fredoka:wght@400;700&family=Orbitron:wght@400;800&family=Black+Ops+One&family=Permanent+Marker&family=Pacifico&family=Dancing+Script:wght@400;700&family=Lobster&family=Press+Start+2P&family=Roboto:wght@400;700;900&family=Montserrat:wght@400;800&family=Poppins:wght@400;800&family=Anton&family=Archivo+Black&family=Russo+One&family=Bungee&family=Bangers&family=Luckiest+Guy&family=Titan+One&family=Righteous&family=Alfa+Slab+One&family=Abril+Fatface&family=Merriweather:wght@400;900&family=Special+Elite&family=Courier+Prime:wght@400;700&family=Great+Vibes&family=Satisfy&family=Caveat:wght@400;700&family=Comic+Neue:wght@400;700&family=Stardos+Stencil:wght@400;700&family=Audiowide&family=Creepster&family=Mountains+of+Christmas:wght@400;700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:#16181D;color:#E8EAED;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
@@ -163,6 +163,7 @@ textarea.txt{width:100%;resize:vertical;min-height:84px;font:inherit;line-height
       <canvas id="c3" style="display:none"></canvas>
       <div id="views" style="display:none" aria-label="Camera"><button data-act="cam-top">Top</button><button data-act="cam-front">Front</button><button data-act="cam-side">Side</button><button data-act="cam-bottom">Bottom</button></div>
       <div id="hud"></div>
+      <div id="busy" style="display:none;position:absolute;left:50%;top:14px;transform:translateX(-50%);background:#16181D;color:#F5A04A;font-size:13px;font-weight:600;padding:8px 14px;border-radius:999px;pointer-events:none;z-index:4">Updating…</div>
     </div>
     <div id="grip" role="separator" aria-orientation="vertical" aria-label="Drag to resize the panel" title="Drag to resize · double-click to reset"><button id="gripBtn" aria-label="Hide the panel" title="Hide or show the panel">›</button></div>
     <aside id="panel" aria-label="Settings"></aside>
@@ -1550,7 +1551,19 @@ var G = (function () {
     for (var f = 0; f < m.f.length; f += 3) {
       var a = m.f[f] * 3, bb = m.f[f + 1] * 3, c = m.f[f + 2] * 3;
       var tri = [[v[a], v[a + 1]], [v[bb], v[bb + 1]], [v[c], v[c + 1]]];
-      scanFill(mask, w, h, [tri], ox, oy, px, 1);
+      // fill just the rows this triangle covers (same rule as scanFill, without walking the whole grid)
+      var tyMin = Math.min(tri[0][1], tri[1][1], tri[2][1]), tyMax = Math.max(tri[0][1], tri[1][1], tri[2][1]);
+      var j0 = Math.max(0, Math.floor((tyMin - oy) / px - 0.5)), j1 = Math.min(h - 1, Math.ceil((tyMax - oy) / px - 0.5));
+      for (var jj = j0; jj <= j1; jj++) {
+        var yy = oy + (jj + 0.5) * px, xa = Infinity, xb = -Infinity, hits = 0;
+        for (var e = 0, ep = 2; e < 3; ep = e++) {
+          var ya = tri[ep][1], yb = tri[e][1];
+          if ((ya > yy) !== (yb > yy)) { var xx = tri[ep][0] + (yy - ya) * (tri[e][0] - tri[ep][0]) / (yb - ya); if (xx < xa) xa = xx; if (xx > xb) xb = xx; hits++; }
+        }
+        if (hits < 2) continue;
+        var ca = Math.max(0, Math.ceil((xa - ox) / px - 0.5)), cb = Math.min(w - 1, Math.floor((xb - ox) / px - 0.5)), row = jj * w;
+        for (var xq = ca; xq <= cb; xq++) mask[row + xq] = 1;
+      }
       // thin/vertical triangles: stamp their vertices so nothing is lost
       for (var q = 0; q < 3; q++) { var ix = Math.round((tri[q][0] - ox) / px - 0.5), iy = Math.round((tri[q][1] - oy) / px - 0.5); if (ix >= 0 && iy >= 0 && ix < w && iy < h) mask[iy * w + ix] = 1; }
     }
@@ -1912,6 +1925,78 @@ var G = (function () {
     for (var i = out.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)), t = out[i]; out[i] = out[j]; out[j] = t; }
     return out;
   }
+  /* close the gaps where a corner of one triangle sits in the middle of another's edge (T-junctions), as boolean cuts leave them */
+  function closeTJunctions(m, passes) {
+    passes = passes || 6;
+    for (var pass = 0; pass < passes; pass++) {
+      var v = m.v, f = m.f, nV = v.length / 3, E = new Map();
+      for (var q = 0; q < f.length; q += 3) for (var k = 0; k < 3; k++) E.set(f[q + k] * nV + f[q + (k + 1) % 3], q);
+      var bverts = new Set(), bedges = [];
+      E.forEach(function (q, key) { var a = Math.floor(key / nV), b = key - a * nV; if (!E.has(b * nV + a)) { bedges.push([a, b, q]); bverts.add(a); bverts.add(b); } });
+      if (!bedges.length) return m;
+      var C = 0.5, grid = new Map();
+      bverts.forEach(function (i) { var k2 = Math.floor(v[i * 3] / C) + ',' + Math.floor(v[i * 3 + 1] / C) + ',' + Math.floor(v[i * 3 + 2] / C), l = grid.get(k2); if (!l) grid.set(k2, l = []); l.push(i); });
+      var done = new Set(), nf = f.slice(), drop = new Set(), add = [], changed = false;
+      bedges.forEach(function (e) {
+        var a = e[0], b = e[1], q = e[2]; if (done.has(q)) return;
+        var A = [v[a * 3], v[a * 3 + 1], v[a * 3 + 2]], Bp = [v[b * 3], v[b * 3 + 1], v[b * 3 + 2]], d = [Bp[0] - A[0], Bp[1] - A[1], Bp[2] - A[2]], L2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2]; if (L2 < 1e-14) return;
+        var hits = [], lo = [Math.min(A[0], Bp[0]), Math.min(A[1], Bp[1]), Math.min(A[2], Bp[2])], hi = [Math.max(A[0], Bp[0]), Math.max(A[1], Bp[1]), Math.max(A[2], Bp[2])];
+        for (var gx = Math.floor(lo[0] / C); gx <= Math.floor(hi[0] / C); gx++) for (var gy = Math.floor(lo[1] / C); gy <= Math.floor(hi[1] / C); gy++) for (var gz = Math.floor(lo[2] / C); gz <= Math.floor(hi[2] / C); gz++) {
+          (grid.get(gx + ',' + gy + ',' + gz) || []).forEach(function (i) {
+            if (i === a || i === b) return;
+            var w = [v[i * 3] - A[0], v[i * 3 + 1] - A[1], v[i * 3 + 2] - A[2]], tt = (w[0] * d[0] + w[1] * d[1] + w[2] * d[2]) / L2; if (tt <= 1e-6 || tt >= 1 - 1e-6) return;
+            var px = w[0] - d[0] * tt, py = w[1] - d[1] * tt, pz = w[2] - d[2] * tt; if (px * px + py * py + pz * pz > 1e-8) return;
+            hits.push([tt, i]);
+          });
+        }
+        if (!hits.length) return;
+        hits.sort(function (x, y) { return x[0] - y[0]; });
+        var c = f[q] === a ? f[q + 2] : f[q + 1] === a ? f[q] : f[q + 1]; // the corner opposite edge a->b
+        var chain = [a].concat(hits.map(function (h) { return h[1]; }), [b]);
+        for (var j = 0; j + 1 < chain.length; j++) add.push(chain[j], chain[j + 1], c);
+        drop.add(q); done.add(q); changed = true;
+      });
+      if (!changed) return m;
+      var out = []; for (var q2 = 0; q2 < nf.length; q2 += 3) if (!drop.has(q2)) out.push(nf[q2], nf[q2 + 1], nf[q2 + 2]);
+      m.f = out.concat(add);
+      if (m.fc) m.fc = null;
+    }
+    return m;
+  }
+  /* cut a box-shaped block out of a mesh, exactly: in frame F the block is a0..a1 (along r), b0..b1 (along u), from the plane (c = 0) outward.
+     Every part is split by the same planes, so the pieces meet edge to edge and both come out closed. */
+  function boxCut(m, F, a0, a1, b0, b1) {
+    var j = 1.37e-6, A0 = a0 + j, A1 = a1 + j, B0 = b0 + j, B1 = b1 + j, C0 = j;
+    var full = toFrame(m, F), fv = full.v, ff = full.f, mg = 0.01, nearF = [], farF = [];
+    for (var q0 = 0; q0 < ff.length; q0 += 3) { // only triangles that reach the block need cutting
+      var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z1 = -Infinity;
+      for (var k0 = 0; k0 < 3; k0++) { var ii = ff[q0 + k0] * 3; if (fv[ii] < x0) x0 = fv[ii]; if (fv[ii] > x1) x1 = fv[ii]; if (fv[ii + 1] < y0) y0 = fv[ii + 1]; if (fv[ii + 1] > y1) y1 = fv[ii + 1]; if (fv[ii + 2] > z1) z1 = fv[ii + 2]; }
+      if (x1 < A0 - mg || x0 > A1 + mg || y1 < B0 - mg || y0 > B1 + mg || z1 < C0 - mg) farF.push(ff[q0], ff[q0 + 1], ff[q0 + 2]); else nearF.push(ff[q0], ff[q0 + 1], ff[q0 + 2]);
+    }
+    var loc = new Mesh(); loc.v = fv; loc.f = nearF;
+    var steps = [['z', C0, false], ['x', A0, false], ['x', A1, true], ['y', B0, false], ['y', B1, true]]; // [axis, pos, keepBelow] for the inside
+    var outside = [], T = loc, P = full; // the block needs the whole closed model so its new faces close properly
+    steps.forEach(function (st) {
+      outside.push(clipMeshAxis(T, st[0], st[1], !st[2], true)); // the surface that stays with the rest
+      T = clipMeshAxis(T, st[0], st[1], st[2], true);
+      P = clipMeshAxis(P, st[0], st[1], st[2], false);           // the block, closed as it goes
+    });
+    var onPl = function (x, y, z) { return Math.abs(z - C0) < 1e-7 || Math.abs(x - A0) < 1e-7 || Math.abs(x - A1) < 1e-7 || Math.abs(y - B0) < 1e-7 || Math.abs(y - B1) < 1e-7; };
+    var restT = [], pieceT = [];
+    outside.forEach(function (o) { for (var q = 0; q < o.f.length; q += 3) for (var k = 0; k < 3; k++) { var i = o.f[q + k] * 3; restT.push(o.v[i], o.v[i + 1], o.v[i + 2]); } });
+    var pv = P.v, pf = P.f;
+    for (var q = 0; q < pf.length; q += 3) {
+      var i0 = pf[q] * 3, i1 = pf[q + 1] * 3, i2 = pf[q + 2] * 3;
+      pieceT.push(pv[i0], pv[i0 + 1], pv[i0 + 2], pv[i1], pv[i1 + 1], pv[i1 + 2], pv[i2], pv[i2 + 1], pv[i2 + 2]);
+      var cap = [i0, i1, i2].every(function (i) { return Math.abs(pv[i + 2] - C0) < 1e-7; }) || [i0, i1, i2].every(function (i) { return Math.abs(pv[i] - A0) < 1e-7; }) || [i0, i1, i2].every(function (i) { return Math.abs(pv[i] - A1) < 1e-7; }) ||
+        [i0, i1, i2].every(function (i) { return Math.abs(pv[i + 1] - B0) < 1e-7; }) || [i0, i1, i2].every(function (i) { return Math.abs(pv[i + 1] - B1) < 1e-7; });
+      if (cap) restT.push(pv[i0], pv[i0 + 1], pv[i0 + 2], pv[i2], pv[i2 + 1], pv[i2 + 2], pv[i1], pv[i1 + 1], pv[i1 + 2]); // the same face, turned over, closes the rest
+    }
+    // the untouched far part keeps its own triangles; only the new ones are joined onto it
+    var seeds = new Set(); for (var s0 = 0; s0 < nearF.length; s0++) seeds.add(nearF[s0]);
+    var rest = closeTJunctions(weldFrame(restT, null, { loc: full, f: farF, c: [], seeds: seeds })), piece = closeTJunctions(indexMesh(pieceT));
+    return { rest: fromFrame(rest, F), piece: fromFrame(piece, F) };
+  }
   function polysToTris(polys, tris) { polys.forEach(function (p) { for (var i = 1; i + 1 < p.vs.length; i++) { var a = p.vs[0], b = p.vs[i], c = p.vs[i + 1]; tris.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]); } }); return tris; }
   /* target minus cutter, and target ∩ cutter, working only on the target's triangles near the cutter.
      Returns {rest: Mesh (target with the pocket), piece: Mesh (the material that was inside the cutter)} */
@@ -2053,17 +2138,24 @@ var G = (function () {
   }
   /* F: frame. regs: letter regions (frame a, b). wrapR: wrap radius (0 = straight). Returns null if it can't. */
   /* join corners that are the same point: exact x, y (they were snapped) and z within a hair, with no rounding edges to fall across */
-  function weldFrame(tris, cols) {
+  function weldFrame(tris, cols, keep) {
+    // keep (optional): { loc, f, c, seeds } — triangles of loc kept exactly as they were, by their own vertex numbers;
+    // only the new triangles are welded, onto the seed vertices where they meet the kept ones
     var m = new Mesh(), map = new Map(), fc = [];
-    var C = 1e-4, tol = 6e-5;
+    var C = 1e-4, tol = 6e-5, K = 4e7;
+    var put = function (x, y, z, id) { var cx = Math.floor(x / C), cy = Math.floor(y / C), k = cx * K + cy, l2 = map.get(k); if (!l2) map.set(k, l2 = []); l2.push(x, y, z, id); };
     var vid = function (x, y, z) {
       var cx = Math.floor(x / C), cy = Math.floor(y / C);
       for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) {
-        var l = map.get((cx + dx) + ',' + (cy + dy)); if (!l) continue;
-        for (var i = 0; i < l.length; i++) { var e = l[i]; if (Math.abs(e[0] - x) < tol && Math.abs(e[1] - y) < tol && Math.abs(e[2] - z) < tol) return e[3]; }
+        var l = map.get((cx + dx) * K + cy + dy); if (!l) continue;
+        for (var i = 0; i < l.length; i += 4) if (Math.abs(l[i] - x) < tol && Math.abs(l[i + 1] - y) < tol && Math.abs(l[i + 2] - z) < tol) return l[i + 3];
       }
-      var id = m.addV(x, y, z), k = cx + ',' + cy, l2 = map.get(k); if (!l2) map.set(k, l2 = []); l2.push([x, y, z, id]); return id;
+      var id = m.addV(x, y, z); put(x, y, z, id); return id;
     };
+    if (keep) {
+      var lv = keep.loc.v; m.v = Array.prototype.slice.call(lv); m.f = keep.f; if (cols) fc = keep.c;
+      keep.seeds.forEach(function (id) { put(lv[id * 3], lv[id * 3 + 1], lv[id * 3 + 2], id); });
+    }
     for (var t = 0; t < tris.length; t += 9) {
       var a = vid(tris[t], tris[t + 1], tris[t + 2]), b = vid(tris[t + 3], tris[t + 4], tris[t + 5]), c = vid(tris[t + 6], tris[t + 7], tris[t + 8]);
       if (a !== b && b !== c && a !== c) { m.tri(a, b, c); if (cols) fc.push(cols[t / 9] || 0); }
@@ -2097,7 +2189,10 @@ var G = (function () {
     // topmost outward surface under the letters (so faces hidden behind it are left alone)
     var res = 0.25, W = Math.ceil((bx.x1 - bx.x0 + 2 * mg) / res) + 2, H = Math.ceil((bx.y1 - bx.y0 + 2 * mg) / res) + 2, top = new Float64Array(W * H).fill(-Infinity), cand = [];
     var triOf = function (q) { var i0 = f[q] * 3, i1 = f[q + 1] * 3, i2 = f[q + 2] * 3; return [[v[i0], v[i0 + 1], v[i0 + 2]], [v[i1], v[i1 + 1], v[i1 + 2]], [v[i2], v[i2 + 1], v[i2 + 2]]]; };
+    var X0 = bx.x0 - mg, X1 = bx.x1 + mg, Y0 = bx.y0 - mg, Y1 = bx.y1 + mg;
     for (var q = 0; q < f.length; q += 3) {
+      var j0 = f[q] * 3, j1 = f[q + 1] * 3, j2 = f[q + 2] * 3; // quick reject without building the triangle
+      if ((v[j0] < X0 && v[j1] < X0 && v[j2] < X0) || (v[j0] > X1 && v[j1] > X1 && v[j2] > X1) || (v[j0 + 1] < Y0 && v[j1 + 1] < Y0 && v[j2 + 1] < Y0) || (v[j0 + 1] > Y1 && v[j1 + 1] > Y1 && v[j2 + 1] > Y1)) continue;
       var T = triOf(q), mnx = Math.min(T[0][0], T[1][0], T[2][0]), mxx = Math.max(T[0][0], T[1][0], T[2][0]), mny = Math.min(T[0][1], T[1][1], T[2][1]), mxy = Math.max(T[0][1], T[1][1], T[2][1]);
       if (mxx < bx.x0 - mg || mnx > bx.x1 + mg || mxy < bx.y0 - mg || mny > bx.y1 + mg) continue;
       if (opts.allow && !opts.allow[q / 3]) continue;
@@ -2118,7 +2213,7 @@ var G = (function () {
       }
     }
     var topAt = function (a, b) { var gx = Math.round((a - bx.x0 + mg) / res), gy = Math.round((b - bx.y0 + mg) / res); var best = -Infinity; for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) { var xx = gx + dx, yy = gy + dy; if (xx >= 0 && yy >= 0 && xx < W && yy < H) best = Math.max(best, top[yy * W + xx]); } return best; };
-    var used = {}, ins = [], outs = [], onEdge = new Map();
+    var used = {}, ins = [], outs = [], onEdge = new Map(), edgeV = new Uint8Array(v.length / 3 + 1);
     // only the surface you placed it on: grow outward from the face under the inlay's center, across shared edges,
     // so faces of other parts (a cabin, the far wall) that happen to sit behind the letters are left alone
     var reach = {};
@@ -2160,7 +2255,7 @@ var G = (function () {
           var tt = ((pt[0] - A[0]) * ex + (pt[1] - A[1]) * ey + (pt[2] - A[2]) * ez) / L2; if (tt <= 1e-7 || tt >= 1 - 1e-7) continue;
           var dx = A[0] + ex * tt - pt[0], dy = A[1] + ey * tt - pt[1], dz = A[2] + ez * tt - pt[2]; if (dx * dx + dy * dy + dz * dz > 1e-9) continue;
           var i3 = ids[e2], j3 = ids[(e2 + 1) % 3], kk2 = Math.min(i3, j3) + '_' + Math.max(i3, j3), lst = onEdge.get(kk2);
-          if (!lst) onEdge.set(kk2, lst = []); lst.push(pt);
+          if (!lst) { onEdge.set(kk2, lst = []); edgeV[i3] = 1; edgeV[j3] = 1; } lst.push(pt);
         }
       }); });
     });
@@ -2196,8 +2291,17 @@ var G = (function () {
       for (var i = 0; i < pg.length; i++) { var b = rev ? pg[(i + 1) % pg.length] : pg[i], c = rev ? pg[i] : pg[(i + 1) % pg.length]; out.push(cx, cy, cz, b[0], b[1], b[2], c[0], c[1], c[2]); }
     };
     var quad = function (p, q4, q5, p5, out) { out.push(p[0], p[1], p[2], q4[0], q4[1], q4[2], q5[0], q5[1], q5[2], p[0], p[1], p[2], q5[0], q5[1], q5[2], p5[0], p5[1], p5[2]); };
+    var fastKeep = !opts.back, keepF = [], keepC = [], seeds = new Set();
+    if (fastKeep) for (var qs = 0; qs < f.length; qs += 3) if (used[qs]) { seeds.add(f[qs]); seeds.add(f[qs + 1]); seeds.add(f[qs + 2]); }
+    var anyEdge = onEdge.size > 0;
     for (var q6 = 0; q6 < f.length; q6 += 3) {
       if (used[q6]) continue;
+      if (fastKeep) { // untouched triangles are kept as they are, without building them
+        var i0 = cn(f[q6]), i1 = cn(f[q6 + 1]), i2 = cn(f[q6 + 2]);
+        if (!anyEdge || (edgeV[i0] + edgeV[i1] + edgeV[i2] < 2) || (!onEdge.has(Math.min(i0, i1) + '_' + Math.max(i0, i1)) && !onEdge.has(Math.min(i1, i2) + '_' + Math.max(i1, i2)) && !onEdge.has(Math.min(i2, i0) + '_' + Math.max(i2, i0)))) {
+          keepF.push(f[q6], f[q6 + 1], f[q6 + 2]); keepC.push(loc.fc ? (loc.fc[q6 / 3] || 0) : 0); continue;
+        }
+      }
       var T2 = triOf(q6), id2 = [cn(f[q6]), cn(f[q6 + 1]), cn(f[q6 + 2])], poly2 = [], extra = false, has = [false, false, false], cornerAt = [];
       for (var e3 = 0; e3 < 3; e3++) {
         var a3 = id2[e3], b3 = id2[(e3 + 1) % 3], lst2 = onEdge.get(Math.min(a3, b3) + '_' + Math.max(a3, b3)), A3 = T2[e3], B3 = T2[(e3 + 1) % 3];
@@ -2210,7 +2314,11 @@ var G = (function () {
         }
       }
       var c2 = loc.fc ? (loc.fc[q6 / 3] || 0) : 0;
-      if (!extra) { tris.push(T2[0][0], T2[0][1], T2[0][2], T2[1][0], T2[1][1], T2[1][2], T2[2][0], T2[2][1], T2[2][2]); paintC(c2); continue; }
+      if (!extra) {
+        if (fastKeep) { keepF.push(f[q6], f[q6 + 1], f[q6 + 2]); keepC.push(c2); continue; }
+        tris.push(T2[0][0], T2[0][1], T2[0][2], T2[1][0], T2[1][1], T2[1][2], T2[2][0], T2[2][1], T2[2][2]); paintC(c2); continue;
+      }
+      if (fastKeep) { seeds.add(f[q6]); seeds.add(f[q6 + 1]); seeds.add(f[q6 + 2]); }
       // fan from a corner whose two edges were not split (keeps every triangle inside the face); otherwise from the middle
       var apex = -1; for (var k4 = 0; k4 < 3; k4++) if (!has[k4] && !has[(k4 + 2) % 3]) { apex = cornerAt[k4]; break; }
       if (apex < 0 && opts.back) apex = cornerAt[0];
@@ -2241,7 +2349,7 @@ var G = (function () {
     if (opts.back) { // unrolled surface: put every corner back in place first, then join them
       var bk = function (arr) { for (var i = 0; i < arr.length; i += 3) { var q = opts.back(arr[i], arr[i + 1], arr[i + 2]); arr[i] = q[0]; arr[i + 1] = q[1]; arr[i + 2] = q[2]; } return arr; };
       tm = weldFrame(bk(tris), loc.fc ? tcols : null); im = weldFrame(bk(inl), null);
-    } else { tm = fromFrame(weldFrame(tris, loc.fc ? tcols : null), F); im = fromFrame(weldFrame(inl, null), F); }
+    } else { tm = fromFrame(weldFrame(tris, loc.fc ? tcols : null, fastKeep ? { loc: loc, f: keepF, c: keepC, seeds: seeds } : null), F); im = fromFrame(weldFrame(inl, null), F); }
     if (signedVolume(im) < 0) meshFlipWinding(im);
     return { target: tm, inlay: im };
   }
@@ -2319,7 +2427,20 @@ var G = (function () {
   }
   /* curvature of the surface around the frame origin, along r (axis 'r') or u ('u'). Returns radius (convex) or 0 if flat. */
   function frameRadius(loc, axis, s) {
-    var hit = function (a) { var o = axis === 'r' ? [a, 0, 60] : [0, a, 60], h = rayMesh(loc, o, [0, 0, -1]); return h ? h.p[2] : null; };
+    var hit = function (a) { // straight down from z = 60: the highest surface under (x, y)
+      var x = axis === 'r' ? a : 0, y = axis === 'r' ? 0 : a, v = loc.v, f = loc.f, best = null;
+      for (var q = 0; q < f.length; q += 3) {
+        var i0 = f[q] * 3, i1 = f[q + 1] * 3, i2 = f[q + 2] * 3;
+        if ((v[i0] < x && v[i1] < x && v[i2] < x) || (v[i0] > x && v[i1] > x && v[i2] > x) || (v[i0 + 1] < y && v[i1 + 1] < y && v[i2 + 1] < y) || (v[i0 + 1] > y && v[i1 + 1] > y && v[i2 + 1] > y)) continue;
+        var ax = v[i0], ay = v[i0 + 1], bx2 = v[i1] - ax, by2 = v[i1 + 1] - ay, cx2 = v[i2] - ax, cy2 = v[i2 + 1] - ay, d = bx2 * cy2 - by2 * cx2;
+        if (Math.abs(d) < 1e-12) continue;
+        var px = x - ax, py = y - ay, l1 = (px * cy2 - py * cx2) / d, l2 = (bx2 * py - by2 * px) / d;
+        if (l1 < 0 || l2 < 0 || l1 + l2 > 1) continue;
+        var z = v[i0 + 2] + l1 * (v[i1 + 2] - v[i0 + 2]) + l2 * (v[i2 + 2] - v[i0 + 2]);
+        if (z < 60 && (best === null || z > best)) best = z;
+      }
+      return best;
+    };
     var c0 = hit(0), c1 = hit(-s), c2 = hit(s);
     if (c0 == null || c1 == null || c2 == null) return 0;
     var c = (c1 + c2) / 2 - c0;
@@ -2564,7 +2685,7 @@ var G = (function () {
     rectPts: rectPts, circlePts: circlePts, roundRectPts: roundRectPts, transformPts: transformPts,
     Mesh: Mesh, extrude: extrude, box: box, xCylinder: xCylinder, checkClosed: checkClosed, signedVolume: signedVolume,
     plainPart: plainPart, inlayParts: inlayParts, hingeBox: hingeBox, hingeBoxParams: hingeBoxParams, lidRotate: lidRotate,
-    traceMask: traceMask, strokeRegions: strokeRegions, patternRegions: patternRegions, PATTERNS: PATTERNS, unionRegions: unionRegions, layeredPart: layeredPart, meshAndPrism: meshAndPrism, clipMeshAxis: clipMeshAxis, cutRegion: cutRegion, connFrame: connFrame, placeMesh: placeMesh, hingeParts: hingeParts, dovetailShapes: dovetailShapes, rayMesh: rayMesh, surfaceFrame: surfaceFrame, surfaceInlay: surfaceInlay, surfaceInlayWrap: surfaceInlayWrap, localCut: localCut, projectedInlay: projectedInlay, imprintInlay: imprintInlay, closedByIndex: closedByIndex, aroundInfo: aroundInfo, surfaceInlayAround: surfaceInlayAround, decodePaint: decodePaint, encodePaint: encodePaint, subdivideX: subdivideX, toFrame: toFrame, fromFrame: fromFrame, parseSTL: parseSTL, parse3MF: parse3MF, readZip: readZip, silhouette: silhouette, sliceMesh: sliceMesh, clipMesh: clipMesh, clipToPlate: clipToPlate, cutMesh: cutMesh, meshFlipWinding: meshFlipWinding, insetRegion: insetRegion, insetLevels: insetLevels, outsetRegion: outsetRegion, threadedJar: threadedJar, lathe: lathe, loft: loft, resampleRing: resampleRing, alignRing: alignRing, cupSolid: cupSolid, edgeSlabs: edgeSlabs, isConvex: isConvex, stlBinary: stlBinary, threeMF: threeMF, zip: zip, crc32: crc32
+    traceMask: traceMask, strokeRegions: strokeRegions, patternRegions: patternRegions, PATTERNS: PATTERNS, unionRegions: unionRegions, layeredPart: layeredPart, meshAndPrism: meshAndPrism, clipMeshAxis: clipMeshAxis, cutRegion: cutRegion, connFrame: connFrame, placeMesh: placeMesh, hingeParts: hingeParts, dovetailShapes: dovetailShapes, rayMesh: rayMesh, surfaceFrame: surfaceFrame, surfaceInlay: surfaceInlay, surfaceInlayWrap: surfaceInlayWrap, localCut: localCut, closeTJunctions: closeTJunctions, boxCut: boxCut, projectedInlay: projectedInlay, imprintInlay: imprintInlay, closedByIndex: closedByIndex, aroundInfo: aroundInfo, surfaceInlayAround: surfaceInlayAround, decodePaint: decodePaint, encodePaint: encodePaint, subdivideX: subdivideX, toFrame: toFrame, fromFrame: fromFrame, parseSTL: parseSTL, parse3MF: parse3MF, readZip: readZip, silhouette: silhouette, sliceMesh: sliceMesh, clipMesh: clipMesh, clipToPlate: clipToPlate, cutMesh: cutMesh, meshFlipWinding: meshFlipWinding, insetRegion: insetRegion, insetLevels: insetLevels, outsetRegion: outsetRegion, threadedJar: threadedJar, lathe: lathe, loft: loft, resampleRing: resampleRing, alignRing: alignRing, cupSolid: cupSolid, edgeSlabs: edgeSlabs, isConvex: isConvex, stlBinary: stlBinary, threeMF: threeMF, zip: zip, crc32: crc32
   };
 })();
 if (typeof module !== 'undefined') module.exports = G;
@@ -2605,36 +2726,66 @@ Viewer.prototype.setBed = function (size) {
 };
 function hexToRgb(h) { h = h.replace('#', ''); return [parseInt(h.substr(0, 2), 16) / 255, parseInt(h.substr(2, 2), 16) / 255, parseInt(h.substr(4, 2), 16) / 255]; }
 /* items: [{mesh, color:'#hex', xf: optional fn(x,y,z)->[x,y,z]}]; offset: [dx,dy] to place on bed */
+/* GPU buffers are kept per mesh, so a mesh that didn't change isn't sent to the graphics card again */
+function meshSig(m, off) { var v = m.v, n = v.length; return n + ':' + m.f.length + ':' + v[0] + ':' + v[n >> 1] + ':' + v[n - 1] + ':' + off[0] + ':' + off[1]; }
+Viewer.prototype._cached = function (cache, m, build) {
+  var key = m.f, sig = meshSig(m, this.off), c = cache.get(key);
+  if (c && c.sig === sig) { c.used = this._gen; return c; }
+  var had = !!c; if (c) { this.gl.deleteBuffer(c.pb); this.gl.deleteBuffer(c.nb); }
+  c = build(); c.sig = sig; c.used = this._gen; c.cached = true; cache.set(key, c); if (!had) (this._live || (this._live = [])).push({ cache: cache, m: key });
+  return c;
+};
+Viewer.prototype._sweep = function () { // free buffers of meshes no longer shown
+  var gl = this.gl, gen = this._gen, keep = [];
+  (this._live || []).forEach(function (e) { var c = e.cache.get(e.m); if (!c) return; if (c.used >= gen - 1) keep.push(e); else { gl.deleteBuffer(c.pb); gl.deleteBuffer(c.nb); e.cache.delete(e.m); } });
+  this._live = keep;
+};
 Viewer.prototype.setItems = function (items, keepCamera) {
   var gl = this.gl; if (!gl) return;
-  this.items.forEach(function (it) { gl.deleteBuffer(it.pb); gl.deleteBuffer(it.nb); });
+  this.items.forEach(function (it) { if (!it.cached) { gl.deleteBuffer(it.pb); gl.deleteBuffer(it.nb); } });
   var self = this;
+  this._gen = (this._gen || 0) + 1; this._drawCache = this._drawCache || new WeakMap();
   this.raw = items;
   this.items = items.map(function (it) {
-    var m = it.mesh, v = m.v, f = m.f, P = new Float32Array(f.length * 3), N = new Float32Array(f.length * 3);
-    var xf = it.xf;
-    for (var t = 0; t < f.length; t += 3) {
-      var q = [];
-      for (var k = 0; k < 3; k++) { var i = f[t + k] * 3; var p = [v[i], v[i + 1], v[i + 2]]; if (xf) p = xf(p[0], p[1], p[2]); q.push(p); }
-      var ux = q[1][0] - q[0][0], uy = q[1][1] - q[0][1], uz = q[1][2] - q[0][2], wx = q[2][0] - q[0][0], wy = q[2][1] - q[0][1], wz = q[2][2] - q[0][2];
-      var nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx, L = Math.hypot(nx, ny, nz) || 1;
-      for (k = 0; k < 3; k++) { var o = (t + k) * 3; P[o] = q[k][0] - self.off[0]; P[o + 1] = q[k][1] - self.off[1]; P[o + 2] = q[k][2]; N[o] = nx / L; N[o + 1] = ny / L; N[o + 2] = nz / L; }
+    if (!it.xf) {
+      var c = self._cached(self._drawCache, it.mesh, function () { return self._geom(it.mesh, null); });
+      return { pb: c.pb, nb: c.nb, count: c.count, cached: true, col: hexToRgb(it.color || '#cccccc'), alpha: it.alpha == null ? 1 : it.alpha, overlay: !!it.overlay };
     }
-    return { pb: self._buf(P), nb: self._buf(N), count: f.length, col: hexToRgb(it.color || '#cccccc'), alpha: it.alpha == null ? 1 : it.alpha, overlay: !!it.overlay };
+    var g = self._geom(it.mesh, it.xf);
+    return { pb: g.pb, nb: g.nb, count: g.count, col: hexToRgb(it.color || '#cccccc'), alpha: it.alpha == null ? 1 : it.alpha, overlay: !!it.overlay };
   });
   if (!keepCamera) this.fit();
   this.draw();
 };
+Viewer.prototype._geom = function (m, xf) {
+  var v = m.v, f = m.f, n = f.length, P = new Float32Array(n * 3), N = new Float32Array(n * 3), ox = this.off[0], oy = this.off[1];
+  for (var k = 0; k < n; k++) { // positions
+    var i = f[k] * 3, o = k * 3;
+    if (xf) { var q = xf(v[i], v[i + 1], v[i + 2]); P[o] = q[0] - ox; P[o + 1] = q[1] - oy; P[o + 2] = q[2]; }
+    else { P[o] = v[i] - ox; P[o + 1] = v[i + 1] - oy; P[o + 2] = v[i + 2]; }
+  }
+  for (var t = 0; t < n * 3; t += 9) { // flat normals, one per triangle
+    var ux = P[t + 3] - P[t], uy = P[t + 4] - P[t + 1], uz = P[t + 5] - P[t + 2], wx = P[t + 6] - P[t], wy = P[t + 7] - P[t + 1], wz = P[t + 8] - P[t + 2];
+    var nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx, L = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+    nx /= L; ny /= L; nz /= L;
+    N[t] = N[t + 3] = N[t + 6] = nx; N[t + 1] = N[t + 4] = N[t + 7] = ny; N[t + 2] = N[t + 5] = N[t + 8] = nz;
+  }
+  return { pb: this._buf(P), nb: this._buf(N), count: n };
+};
 /* items for tap-picking: [{mesh, id}] */
 Viewer.prototype.setPickItems = function (items) {
   var gl = this.gl; if (!gl) return;
-  this.pickItems.forEach(function (it) { gl.deleteBuffer(it.pb); gl.deleteBuffer(it.nb); });
-  var self = this;
+  var self = this; this._pickCache = this._pickCache || new WeakMap();
   this.pickItems = items.map(function (it) {
-    var m = it.mesh, P = new Float32Array(m.f.length * 3);
-    for (var t = 0; t < m.f.length; t++) { var i = m.f[t] * 3; P[t * 3] = m.v[i] - self.off[0]; P[t * 3 + 1] = m.v[i + 1] - self.off[1]; P[t * 3 + 2] = m.v[i + 2]; }
-    return { pb: self._buf(P), nb: self._buf(new Float32Array(m.f.length * 3)), count: m.f.length, id: it.id, top: !!it.top };
+    var m = it.mesh;
+    var c = self._cached(self._pickCache, m, function () {
+      var P = new Float32Array(m.f.length * 3);
+      for (var t = 0; t < m.f.length; t++) { var i = m.f[t] * 3; P[t * 3] = m.v[i] - self.off[0]; P[t * 3 + 1] = m.v[i + 1] - self.off[1]; P[t * 3 + 2] = m.v[i + 2]; }
+      return { pb: self._buf(P), nb: null, count: m.f.length };
+    });
+    return { pb: c.pb, nb: c.nb, count: c.count, id: it.id, top: !!it.top };
   });
+  this._sweep();
 };
 /* the camera can tumble all the way round; past straight up or down the picture's 'up' flips so the motion stays smooth */
 Viewer.prototype._up = function () {
@@ -2673,7 +2824,7 @@ Viewer.prototype.pick = function (x, y) {
   var L = this.loc;
   var drawPick = function (it) {
     gl.bindBuffer(gl.ARRAY_BUFFER, it.pb); gl.enableVertexAttribArray(L.p); gl.vertexAttribPointer(L.p, 3, gl.FLOAT, false, 0, 0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, it.nb); gl.enableVertexAttribArray(L.n); gl.vertexAttribPointer(L.n, 3, gl.FLOAT, false, 0, 0);
+    gl.disableVertexAttribArray(L.n); gl.vertexAttrib3f(L.n, 0, 0, 1);
     gl.uniform3f(L.col, (it.id & 255) / 255, ((it.id >> 8) & 255) / 255, 0);
     gl.drawArrays(gl.TRIANGLES, 0, it.count);
   };
@@ -2832,7 +2983,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.18';
+  var VERSION = '1.19';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
@@ -2848,7 +2999,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') persistNow(); });
   function persist() {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(writeStore, 300);
+    saveTimer = setTimeout(function () { if (window.requestIdleCallback) requestIdleCallback(writeStore, { timeout: 1500 }); else writeStore(); }, 600);
   }
   /* big work (imported models) doesn't fit the small quick store, so it also goes in the browser's database */
   var IDB = null;
@@ -2864,8 +3015,9 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   function writeStore() {
     saveTimer = null;
     var data, stamp = Date.now();
-    try { data = JSON.stringify({ shapes: S.shapes.map(cleanShape), nextId: S.nextId, T: S.T, inlay: S.inlay, hinge: S.hinge, fingerDraw: S.fingerDraw, lock: S.lock, wall: S.wall, floorT: S.floorT, projectName: S.projectName, filaments: S.filaments, fil: S.fil, plates: S.plates, plate: S.plate, groupNames: S.groupNames, snap: S.snap, handles: S.handles, openLine: S.openLine, lineW: S.lineW, stand: S.stand, loft: S.loft, lid: S.lid, screw: S.screw, jar: S.jar, rep: S.rep }); } catch (e) { return; }
+    try { data = JSON.stringify({ shapes: '@@SHAPES@@', nextId: S.nextId, T: S.T, inlay: S.inlay, hinge: S.hinge, fingerDraw: S.fingerDraw, lock: S.lock, wall: S.wall, floorT: S.floorT, projectName: S.projectName, filaments: S.filaments, fil: S.fil, plates: S.plates, plate: S.plate, groupNames: S.groupNames, snap: S.snap, handles: S.handles, openLine: S.openLine, lineW: S.lineW, stand: S.stand, loft: S.loft, lid: S.lid, screw: S.screw, jar: S.jar, rep: S.rep }).replace('"@@SHAPES@@"', shapesJson()); } catch (e) { return; }
     try {
+      if (data.length > 4.5e6) throw new Error('too big for the quick store');
       localStorage.setItem('printsketch-v1', data); localStorage.removeItem('printsketch-big'); storeWarned = false;
       idbPut(null).catch(function () { });
     } catch (e) {
@@ -2874,6 +3026,23 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
         if (!storeWarned) { storeWarned = true; toast('Your work is too big for the app to remember after you close it. Save it with Project → Save project before you leave.', 7000); }
       });
     }
+  }
+  /* the big model data of each object is turned into text once and reused until that model changes */
+  var jsonCache = new WeakMap();
+  function bigJson(o) {
+    if (!o || typeof o !== 'object') return JSON.stringify(o);
+    var c = jsonCache.get(o);
+    if (c && c.v === o.v && c.f === o.f && c.fc === o.fc) return c.s;
+    var s = JSON.stringify(o); jsonCache.set(o, { v: o.v, f: o.f, fc: o.fc, s: s }); return s;
+  }
+  var BIG = ['mesh', 'texBase', 'sil'];
+  function shapesJson() {
+    return '[' + S.shapes.map(function (s) {
+      var o = cleanShape(s), parts = [];
+      BIG.forEach(function (k) { if (o[k] && typeof o[k] === 'object') { parts.push('"' + k + '":' + bigJson(o[k])); delete o[k]; } });
+      var j = JSON.stringify(o);
+      return parts.length ? j.slice(0, -1) + (j.length > 2 ? ',' : '') + parts.join(',') + '}' : j;
+    }).join(',') + ']';
   }
   function cleanShape(s) { var o = {}; for (var k in s) if (k !== '_c' && k !== '_mesh' && Object.prototype.hasOwnProperty.call(s, k)) o[k] = s[k]; o.z = s.z || 0; o.through = s.through !== false; o.fil = s.fil || 1; return o; }
   var redoStack = [];
@@ -3459,6 +3628,8 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   function textRegionsNorm(text, fnt) {
     var regs = textRegionsFlat(text, fnt), cv = fontOf(fnt).curve;
     if (!cv || !regs.length) return regs;
+    var bkey = fontCss(fnt, 160) + '|' + (text || '').trim() + '|bend' + cv;
+    if (textCache[bkey]) return textCache[bkey];
     var arc = cv * Math.PI / 180, Rn = 1 / arc;
     var dens = function (pts) { var o = []; for (var i = 0; i < pts.length; i++) { var a = pts[i], b = pts[(i + 1) % pts.length], k = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.01)); for (var j = 0; j < k; j++) o.push([a[0] + (b[0] - a[0]) * j / k, a[1] + (b[1] - a[1]) * j / k]); } return o; };
     var bend = function (pts) { return dens(pts).map(function (p) { var th = p[0] * arc, rr = Rn + p[1]; return [rr * Math.sin(th), rr * Math.cos(th) - Rn]; }); };
@@ -3467,6 +3638,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     var f = function (p) { return [(p[0] - b.cx) * k, (p[1] - b.cy) * k]; };
     var res = out.map(function (r) { return { outer: r.outer.map(f), holes: r.holes.map(function (h) { return h.map(f); }) }; });
     res.letterH = G.bbox(regs.map(function (r) { return r.outer; })).h * k;
+    textCache[bkey] = res;
     return res;
   }
   function textRegionsFlat(text, fnt) {
@@ -3481,7 +3653,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     for (var i = 0; i < mask.length; i++) mask[i] = d[i * 4 + 3] > 110 ? 1 : 0;
     var regs = G.traceMask(mask, cv.width, cv.height, { tol: 0.9, minArea: 20 });
     var out = pxToMm(regs, cv.width, cv.height, 1, 0, 0);
-    if (ready) textCache[key] = out;
+    textCache[key] = out; // a font that loads later clears these (fontReady)
     return out;
   }
 
@@ -3490,8 +3662,89 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     ['Arial Black', 'Bold block'], ['Inter', 'Clean sans'], ['Oswald', 'Tall condensed'], ['Bebas Neue', 'Headline capitals'],
     ['Roboto Slab', 'Slab serif'], ['Playfair Display', 'Elegant serif'], ['Cinzel', 'Classic capitals'], ['Fredoka', 'Rounded'],
     ['Orbitron', 'Techy'], ['Black Ops One', 'Military stencil'], ['Permanent Marker', 'Marker'], ['Pacifico', 'Script'],
-    ['Dancing Script', 'Handwriting'], ['Lobster', 'Retro script'], ['Press Start 2P', 'Pixel']
+    ['Dancing Script', 'Handwriting'], ['Lobster', 'Retro script'], ['Press Start 2P', 'Pixel'],
+    ['Roboto', 'Everyday sans'], ['Montserrat', 'Modern geometric'], ['Poppins', 'Friendly geometric'], ['Anton', 'Tall heavy'], ['Archivo Black', 'Wide heavy'],
+    ['Russo One', 'Sporty'], ['Bungee', 'Signage'], ['Bangers', 'Comic book'], ['Luckiest Guy', 'Cartoon'], ['Titan One', 'Chunky rounded'],
+    ['Righteous', 'Retro rounded'], ['Alfa Slab One', 'Heavy slab'], ['Abril Fatface', 'Fashion serif'], ['Merriweather', 'Book serif'], ['Special Elite', 'Typewriter'],
+    ['Courier Prime', 'Typewriter mono'], ['Great Vibes', 'Fancy script'], ['Satisfy', 'Casual script'], ['Caveat', 'Handwritten'], ['Comic Neue', 'Comic style'],
+    ['Stardos Stencil', 'Stencil'], ['Audiowide', 'Futuristic'], ['Creepster', 'Spooky'], ['Mountains of Christmas', 'Christmas']
   ];
+  /* fonts installed on this computer (Windows/Mac fonts, the same ones Bambu Studio lists), and font files you add yourself */
+  var PC_FONTS = ['Arial', 'Impact', 'Comic Sans MS', 'Times New Roman', 'Georgia', 'Verdana', 'Tahoma', 'Trebuchet MS', 'Courier New', 'Segoe UI', 'Segoe UI Black', 'Segoe Script', 'Segoe Print',
+    'Calibri', 'Cambria', 'Candara', 'Consolas', 'Constantia', 'Corbel', 'Franklin Gothic Medium', 'Gabriola', 'Ink Free', 'Lucida Console', 'Palatino Linotype', 'Sitka Text', 'Bahnschrift',
+    'Book Antiqua', 'Century Gothic', 'Garamond', 'Rockwell', 'Rockwell Extra Bold', 'Bodoni MT', 'Broadway', 'Algerian', 'Stencil', 'Old English Text MT', 'Brush Script MT', 'Chiller', 'Jokerman',
+    'Showcard Gothic', 'Cooper Black', 'Forte', 'Harrington', 'Lucida Handwriting', 'Magneto', 'Papyrus', 'Ravie', 'Snap ITC', 'Wide Latin', 'Bauhaus 93', 'Berlin Sans FB', 'Britannic Bold',
+    'Elephant', 'Gill Sans MT', 'Haettenschweiler', 'Tw Cen MT', 'Helvetica', 'Helvetica Neue', 'Futura', 'Avenir', 'Avenir Next', 'Gill Sans', 'Optima', 'Didot', 'Baskerville', 'Chalkboard',
+    'Marker Felt', 'Noteworthy', 'American Typewriter', 'Copperplate', 'Rockwell', 'Zapfino', 'Snell Roundhand', 'Bradley Hand', 'Trattatello', 'Herculanum', 'Phosphate', 'Chalkduster'];
+  var myFonts = [], localExtra = [], pcHave = null, fontRmName = null;
+  try { localExtra = JSON.parse(localStorage.getItem('printsketch-localfonts') || '[]'); } catch (e) { }
+  function fontInstalled(name) { // compare against two fallbacks: if the width changes, the font is there
+    try {
+      var c = fontInstalled.c || (fontInstalled.c = document.createElement('canvas').getContext('2d')), s = 'mmmmmmmmmlliWW@#123';
+      return ['monospace', 'serif'].some(function (fb) { c.font = '72px ' + fb; var w0 = c.measureText(s).width; c.font = '72px "' + name + '", ' + fb; return Math.abs(c.measureText(s).width - w0) > 0.5; });
+    } catch (e) { return false; }
+  }
+  function pcFonts() {
+    if (!pcHave) {
+      var built = FONTS.map(function (x) { return x[0]; }), seen = {};
+      pcHave = PC_FONTS.concat(localExtra).filter(function (n) { if (seen[n] || built.indexOf(n) >= 0) return false; seen[n] = 1; return localExtra.indexOf(n) >= 0 || fontInstalled(n); }).sort();
+    }
+    return pcHave;
+  }
+  function idbKey(k, v) { return idb().then(function (db) { return new Promise(function (ok, no) { var tx = db.transaction('kv', 'readwrite'), st = tx.objectStore('kv'); if (v === undefined) st.delete(k); else st.put(v, k); tx.oncomplete = ok; tx.onerror = function () { no(tx.error); }; }); }); }
+  function loadMyFonts() {
+    return idb().then(function (db) { return new Promise(function (ok) { var out = [], rq = db.transaction('kv').objectStore('kv').openCursor(); rq.onsuccess = function () { var cu = rq.result; if (!cu) return ok(out); if (typeof cu.key === 'string' && cu.key.indexOf('font:') === 0 && cu.value) out.push(cu.value); cu.continue(); }; rq.onerror = function () { ok(out); }; }); })
+      .then(function (list) {
+        return Promise.all(list.map(function (r) { try { var ff = new FontFace(r.name, r.data); return ff.load().then(function (f) { document.fonts.add(f); return r.name; }, function () { return null; }); } catch (e) { return null; } }));
+      }).then(function (names) { myFonts = names.filter(Boolean).sort(); return myFonts; }).catch(function () { return myFonts; });
+  }
+  function addFontFile(done) {
+    var inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.ttf,.otf,.woff,.woff2,font/*';
+    inp.onchange = function () {
+      var file = inp.files && inp.files[0]; if (!file) return;
+      var name = file.name.replace(/\.(ttf|otf|woff2?)$/i, '').replace(/[-_]+/g, ' ').replace(/\[.*\]/g, '').replace(/\s+/g, ' ').replace(/\s+Regular$/i, '').trim().slice(0, 50) || 'My font';
+      file.arrayBuffer().then(function (buf) {
+        var ff = new FontFace(name, buf);
+        return ff.load().then(function (f) {
+          document.fonts.add(f); if (myFonts.indexOf(name) < 0) myFonts.push(name); myFonts.sort();
+          return idbKey('font:' + name, { name: name, data: buf }).catch(function () { toast('The font works now, but could not be saved on this device for next time.', 5000); });
+        });
+      }).then(function () { toast('Added the font \u201c' + name + '\u201d. It stays in the app on this device.', 5000); done(name); })
+        .catch(function () { toast('That file is not a font this browser can read. Try a .ttf or .otf file.', 5000); });
+    };
+    inp.click();
+  }
+  function removeMyFont(name) {
+    myFonts = myFonts.filter(function (n) { return n !== name; });
+    idbKey('font:' + name).catch(function () { });
+    document.fonts.forEach(function (f) { if (f.family === name || f.family === '"' + name + '"') document.fonts.delete(f); });
+    toast('Removed \u201c' + name + '\u201d from the app. Text using it falls back to Arial.', 5000);
+  }
+  function findAllLocalFonts(done) {
+    if (!window.queryLocalFonts) return toast('This browser can\u2019t list your computer\u2019s fonts. The common ones it found are under \u201cOn this computer\u201d. You can also add a font file.', 7000);
+    window.queryLocalFonts().then(function (list) {
+      var fam = {}; list.forEach(function (f) { fam[f.family] = 1; });
+      localExtra = Object.keys(fam).sort(); pcHave = null;
+      try { localStorage.setItem('printsketch-localfonts', JSON.stringify(localExtra)); } catch (e) { }
+      toast('Found ' + localExtra.length + ' fonts on this computer.', 4000); done();
+    }).catch(function () { toast('Permission to read this computer\u2019s fonts wasn\u2019t given. You can allow it in the browser\u2019s site settings, or add a font file instead.', 7000); });
+  }
+  /* special choices in a font list; returns true when handled (the list is redrawn by done) */
+  function fontMenuPick(v, done) {
+    if (v === '__add') { addFontFile(function (n) { done(n); }); return true; }
+    if (v === '__all') { findAllLocalFonts(function () { done(null); }); return true; }
+    return false;
+  }
+  function fontOptions(cur) {
+    var o = function (val, label) { return '<option value="' + esc(val) + '"' + (val === cur ? ' selected' : '') + '>' + esc(label) + '</option>'; }, all = [];
+    var h = '<optgroup label="Built in (work everywhere)">' + FONTS.map(function (x) { all.push(x[0]); return o(x[0], x[1] + ' (' + x[0] + ')'); }).join('') + '</optgroup>';
+    if (myFonts.length) h += '<optgroup label="My fonts">' + myFonts.map(function (n) { all.push(n); return o(n, n); }).join('') + '</optgroup>';
+    var pc = pcFonts().filter(function (n) { return myFonts.indexOf(n) < 0; });
+    if (pc.length) h += '<optgroup label="On this computer">' + pc.map(function (n) { all.push(n); return o(n, n); }).join('') + '</optgroup>';
+    if (cur && all.indexOf(cur) < 0) h = o(cur, cur + ' (not on this device)') + h;
+    h += '<optgroup label="More">' + '<option value="__add">\uFF0B Add a font file (.ttf, .otf)\u2026</option>' + (window.queryLocalFonts ? '<option value="__all">Show all fonts on this computer\u2026</option>' : '') + '</optgroup>';
+    return h;
+  }
   function fontOf(f) { f = f || {}; return { family: f.family || 'Arial Black', bold: f.bold !== false, italic: !!f.italic, curve: +f.curve || 0 }; }
   function fontCss(f, px) { f = fontOf(f); return (f.italic ? 'italic ' : '') + (f.bold ? '800 ' : '400 ') + px + 'px "' + f.family + '", Arial, sans-serif'; }
   var fontWaits = {};
@@ -3510,7 +3763,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   function fontControlsBase(attr, f) {
     f = fontOf(f);
     return '<div class="field"><label class="lbl" for="fs-' + attr + '">Font</label><select id="fs-' + attr + '" data-font="' + attr + '">' +
-      FONTS.map(function (x) { return '<option value="' + x[0] + '"' + (x[0] === f.family ? ' selected' : '') + '>' + x[1] + ' (' + x[0] + ')</option>'; }).join('') + '</select>' +
+      fontOptions(f.family) + '</select>' + (myFonts.indexOf(f.family) >= 0 ? '<button class="linkbtn" data-act="font-rm" data-v="' + esc(f.family) + '">Remove this font from the app</button>' : '') +
       '<div class="fontprev" style="font:' + fontCss(f, 26).replace(/"/g, '&quot;') + '">Aa Bb 123</div>' +
       '<div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button data-fstyle="' + attr + '" data-v="bold" class="' + (f.bold ? 'on' : '') + '" aria-pressed="' + f.bold + '"><b>Bold</b></button><button data-fstyle="' + attr + '" data-v="italic" class="' + (f.italic ? 'on' : '') + '" aria-pressed="' + f.italic + '"><i>Italic</i></button></div></div>';
   }
@@ -3542,7 +3795,11 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       $('#ttx').oninput = function () { T.text = this.value; };
       $('#tsz').onchange = function () { T.size = Math.max(2, Math.min(250, +this.value || 15)); };
       $('#tdp').onchange = function () { T.depth = Math.max(0.4, Math.min(256, +this.value || 4)); };
-      m.querySelector('[data-font]').onchange = function () { T.font.family = this.value; fontReady(T.font, T.text); draw(); };
+      m.querySelector('[data-font]').onchange = function () {
+        var sel = this;
+        if (fontMenuPick(sel.value, function (n) { if (n) T.font.family = n; fontReady(T.font, T.text); draw(); })) { sel.value = T.font.family; return; }
+        T.font.family = sel.value; fontReady(T.font, T.text); draw();
+      };
       m.querySelectorAll('[data-fstyle]').forEach(function (bt) { bt.onclick = function () { var k = bt.getAttribute('data-v'); T.font[k] = !T.font[k]; draw(); }; });
       m.querySelectorAll('[data-fcurve]').forEach(function (bt) { bt.onclick = function () { T.font.curve = +bt.getAttribute('data-v'); draw(); }; });
       $('#tNo').onclick = function () { m.classList.remove('show'); };
@@ -3720,7 +3977,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     var res = buildGroupMesh(gr);
     // anything sunk below the plate is cut off flat
     res.forEach(function (p) { if (p.mesh.f.length && p.mesh.bounds()[2] < -1e-4) p.mesh = G.clipToPlate(p.mesh, 0); });
-    if (gmCache.size > 30) gmCache.clear();
+    if (gmCache.size > 6) gmCache.delete(gmCache.keys().next().value);
     gmCache.set(key, res);
     return res;
   }
@@ -3812,16 +4069,41 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   }
   function startCut(s) {
     var r = objRange(s, 'z');
-    S.cut = { id: s.id, axis: 'z', pos: Math.round((r[0] + r[1]) / 2 * 10) / 10, keep: 'both' };
+    var b0 = shapeBox(s);
+    S.cut = { id: s.id, axis: 'z', pos: Math.round((r[0] + r[1]) / 2 * 10) / 10, keep: 'both', a1: 0, a2: 0, lim: false, w: Math.max(5, Math.round(b0.w / 2)), d: Math.max(5, Math.round(b0.h / 2)), cu: 0, cv: 0 };
     if (!S.view3d) { S.view3d = true; renderPanel(); update3d(false); } else { renderPanel(); draw3d(true); }
   }
+  /* the cut's own frame: o on the plane, r and u along it, n = the side that counts as 'more' (top / right / back) */
+  function rotAbout(v, k, deg) {
+    var a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), d = v[0] * k[0] + v[1] * k[1] + v[2] * k[2];
+    var x = [k[1] * v[2] - k[2] * v[1], k[2] * v[0] - k[0] * v[2], k[0] * v[1] - k[1] * v[0]];
+    return [v[0] * c + x[0] * s + k[0] * d * (1 - c), v[1] * c + x[1] * s + k[1] * d * (1 - c), v[2] * c + x[2] * s + k[2] * d * (1 - c)];
+  }
+  function cutFrame(s, C) {
+    var b = shapeBox(s), o = [b.cx, b.cy, ((s.z || 0) + objTop(s)) / 2], ax = { x: 0, y: 1, z: 2 }[C.axis];
+    o[ax] = C.pos;
+    var n = C.axis === 'z' ? [0, 0, 1] : C.axis === 'x' ? [1, 0, 0] : [0, 1, 0];
+    var r = C.axis === 'y' ? [1, 0, 0] : C.axis === 'x' ? [0, 1, 0] : [1, 0, 0], u = C.axis === 'z' ? [0, 1, 0] : [0, 0, 1];
+    if (C.a1) { n = rotAbout(n, u, C.a1); r = rotAbout(r, u, C.a1); }
+    if (C.a2) { n = rotAbout(n, r, C.a2); u = rotAbout(u, r, C.a2); }
+    return { o: o, r: r, u: u, n: n };
+  }
+  function cutPlain(C) { return !C.a1 && !C.a2 && !C.lim; }
   function cutPlaneMesh() {
     var s = shapeById(S.cut && S.cut.id); if (!s) return null;
+    if (!cutPlain(S.cut)) {
+      var C0 = S.cut, F = cutFrame(s, C0), lb = G.toFrame(meshOrPrism(s), F).bounds(), e0 = 6, tt = 0.15;
+      var a0 = C0.lim ? C0.cu - C0.w / 2 : lb[0] - e0, a1 = C0.lim ? C0.cu + C0.w / 2 : lb[3] + e0, b0 = C0.lim ? C0.cv - C0.d / 2 : lb[1] - e0, b1 = C0.lim ? C0.cv + C0.d / 2 : lb[4] + e0;
+      var pm = G.box(a0, b0, -tt, a1, b1, tt);
+      if (C0.lim) pm.append(G.box(a0, b0, tt, a1, b1, Math.max(tt * 2, lb[5] + 1))); // the part that will come off
+      return G.fromFrame(pm, F);
+    }
     var b = shapeBox(s), z0 = (s.z || 0) - 4, z1 = objTop(s) + 4, p = S.cut.pos, e = 8, t = 0.15;
     if (S.cut.axis === 'z') return G.box(b.minX - e, b.minY - e, p - t, b.maxX + e, b.maxY + e, p + t);
     if (S.cut.axis === 'x') return G.box(p - t, b.minY - e, z0, p + t, b.maxY + e, z1);
     return G.box(b.minX - e, p - t, z0, b.maxX + e, p + t, z1);
   }
+  function meshOrPrism(s) { return s.kind === 'mesh' ? meshOf(s) : buildMeshFor([s], []); }
   function panelCut(s) {
     var C = S.cut, r = objRange(s, C.axis), h = '';
     h += '<h2>Cut ' + esc(s.name || shapeLabel(s)) + '</h2><p class="sub">The blue plane shows where the cut goes.</p>';
@@ -3829,9 +4111,17 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     var lbl = C.axis === 'z' ? 'Height of the cut' : C.axis === 'x' ? 'X position of the cut' : 'Y position of the cut';
     h += stepper('cut.pos', lbl, 'mm', 0.5, Math.floor(r[0] * 10) / 10, Math.ceil(r[1] * 10) / 10, 1);
     h += '<input type="range" data-range="cut.pos" min="' + r[0] + '" max="' + r[1] + '" step="0.1" value="' + C.pos + '" aria-label="Move the cut">';
-    var names = C.axis === 'z' ? ['Bottom only', 'Top only'] : C.axis === 'x' ? ['Left only', 'Right only'] : ['Front only', 'Back only'];
+    var al = C.axis === 'z' ? ['Tilt left / right', 'Tilt front / back'] : ['Turn (seen from above)', 'Lean'];
+    h += '<div class="field"><span class="lbl">Angle</span></div>' + stepper('cut.a1', al[0], '\u00B0', 5, -60, 60, 0) + stepper('cut.a2', al[1], '\u00B0', 5, -60, 60, 0);
+    h += toggle('cut.lim', 'Only cut part of it');
+    if (C.lim) {
+      var dl = C.axis === 'z' ? ['Width (X)', 'Depth (Y)', 'Move left / right', 'Move front / back'] : C.axis === 'x' ? ['Width (Y)', 'Height (Z)', 'Move front / back', 'Move down / up'] : ['Width (X)', 'Height (Z)', 'Move left / right', 'Move down / up'];
+      h += stepper('cut.w', dl[0], 'mm', 1, 1, 400, 1) + stepper('cut.d', dl[1], 'mm', 1, 1, 400, 1) + stepper('cut.cu', dl[2], 'mm', 1, -200, 200, 1) + stepper('cut.cv', dl[3], 'mm', 1, -200, 200, 1);
+      h += '<p class="note">Only the shaded block comes off; the rest of the object stays whole.</p>';
+    }
+    var names = C.lim ? ['The rest', 'The cut-off part'] : C.axis === 'z' ? ['Bottom only', 'Top only'] : C.axis === 'x' ? ['Left only', 'Right only'] : ['Front only', 'Back only'];
     h += seg('cut.keep', 'Keep', [['both', 'Both pieces'], ['less', names[0]], ['more', names[1]]]);
-    h += '<p class="note">' + (C.keep === 'both' ? 'Each piece becomes its own object, moved apart a little.' + (C.axis === 'z' ? ' The top piece is set down on the plate.' : '') : 'The other side is thrown away. Undo brings it back.') + '</p>';
+    h += '<p class="note">' + (C.keep === 'both' ? 'Each piece becomes its own object, moved apart a little.' + (C.axis === 'z' ? (cutPlain(C) ? ' The top piece is set down on the plate.' : ' The top piece is laid with its cut face down on the plate, ready to print.') : '') : 'The other side is thrown away. Undo brings it back.') + '</p>';
     h += '<div class="btns"><button class="ghost" data-act="cut-cancel">Cancel</button><button class="primary" data-act="cut-apply">Cut it</button></div>';
     return h;
   }
@@ -3840,6 +4130,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     var C = S.cut, s = shapeById(C.id); if (!s) { S.cut = null; renderPanel(); return; }
     var r = objRange(s, C.axis);
     if (C.pos <= r[0] + 0.05 || C.pos >= r[1] - 0.05) return toast('Move the cut so it goes through the object.');
+    if (!cutPlain(C)) return applyCutFramed(s, C);
     snapshot();
     var pieces = []; // [{side:'less'|'more', props}]
     if (s.kind === 'mesh') {
@@ -3881,6 +4172,54 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       if (C.axis === 'z' && pc.side === 'more') { // set it down on the plate
         if (target.kind === 'mesh') { var lift = target.z; setMeshZ(target, function (z) { return z - lift; }); } else target.z = 0;
       }
+    });
+    S.cut = null; S.sel = s.id;
+    changed(true);
+    toast(pieces.length > 1 ? 'Cut into ' + pieces.length + ' pieces.' : 'Cut done.');
+  }
+  /* angled and/or limited cuts: done in the cut's own frame */
+  function applyCutFramed(s, C) {
+    snapshot();
+    toMeshShape(s);
+    var F = cutFrame(s, C), lb = G.toFrame(meshOf(s), F).bounds(), big = Math.max(lb[3] - lb[0], lb[4] - lb[1], lb[5] - lb[2]) + 20;
+    var srcs = s.compound ? splitCompound(s) : [{ fil: filOf(s), mesh: meshOf(s) }];
+    var cutOneSrc = function (m) { // -> { less, more } in world space
+      if (!C.lim) {
+        var loc = G.toFrame(m, F);
+        return { less: G.fromFrame(G.clipMesh(loc, 1e-5, true), F), more: G.fromFrame(G.clipMesh(loc, -1e-5, false), F) };
+      }
+      var r = G.boxCut(m, F, C.cu - C.w / 2, C.cu + C.w / 2, C.cv - C.d / 2, C.cv + C.d / 2);
+      return { less: r.rest, more: r.piece };
+    };
+    var res;
+    try { res = srcs.map(function (pc) { var o = cutOneSrc(pc.mesh); return { fil: pc.fil, less: o.less, more: o.more }; }); }
+    catch (e) { undoStack.pop(); return toast('That cut didn\u2019t work on this model. Try moving it a little.'); }
+    var pieces = [];
+    ['less', 'more'].forEach(function (side) {
+      if (C.keep !== 'both' && C.keep !== side) return;
+      var parts = res.map(function (r) { return { fil: r.fil, mesh: r[side] }; }).filter(function (pc) { return pc.mesh.f.length; });
+      if (!parts.length) return;
+      var part = s.compound ? mergePieces(parts, filOf(s)) : parts[0].mesh;
+      pieces.push({ side: side, mesh: part });
+    });
+    if (!pieces.length) { undoStack.pop(); return toast('Nothing left on that side.'); }
+    if (C.lim && pieces.length === 2 && pieces[1].mesh.f.length && Math.abs(G.signedVolume(pieces[1].mesh)) < 0.01) { undoStack.pop(); return toast('The block doesn\u2019t reach the object. Move it or make it bigger.'); }
+    var base = (s.name || shapeLabel(s).split(' · ')[0]).replace(/ \(\d+\)$/, '');
+    pieces.forEach(function (pc, i) {
+      var target = i === 0 ? s : copyShape(s), m = pc.mesh;
+      if (C.keep === 'both' && pc.side === 'more' && C.axis === 'z') { // lay it cut face down
+        var bb0 = shapeBox(s), loc = G.toFrame(m, F), lbb = loc.bounds();
+        m = loc.transform(function (a, b, c) { return [a + bb0.cx, b + bb0.cy, c - lbb[2]]; });
+      }
+      target.mesh = { v: m.v.map(function (x) { return Math.round(x * 1e4) / 1e4; }), f: m.f, fc: m.fc }; target.pieces = m.pieces;
+      if (pieces.length > 1) { var k = 1; while (S.shapes.some(function (x) { return x !== target && x.name === base + ' (' + k + ')'; })) k++; target.name = base + ' (' + k + ')'; }
+      touch(target); refreshSilhouette(target);
+      if (i > 0) addObj(target);
+      if (C.keep === 'both' && pc.side === 'more') { // move it clear of the other piece
+        var b1 = shapeBox(s), b2 = shapeBox(target), dx = b1.maxX + 8 - b2.minX;
+        mapShape(target, function (x, y) { return [x + dx, y]; });
+      }
+      if (target.z < -1e-4 || C.keep !== 'both') { var lift = target.z; if (lift < 0) setMeshZ(target, function (z) { return z - lift; }); }
     });
     S.cut = null; S.sel = s.id;
     changed(true);
@@ -4277,6 +4616,24 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     var f = function (p) { var x = p[0] * w, y = p[1] * w; return [x * c - y * s, x * s + y * c]; };
     return src.map(function (r) { return { outer: r.outer.map(f), holes: r.holes.map(function (h) { return h.map(f); }) }; });
   }
+  /* an inlay's result is kept: changing another part of the object doesn't stamp it again */
+  var decCache = new Map();
+  function meshKey(m) {
+    var v = m.v, f = m.f, n = v.length, h = n + ':' + f.length, st = Math.max(1, Math.floor(n / 64));
+    for (var i = 0; i < n; i += st) h += ':' + Math.round(v[i] * 1e4);
+    return h + ':' + v[n - 1] + ':' + (m.fc ? m.fc.length : 0);
+  }
+  function pruneCaches() {
+    [decCache, cutCache].forEach(function (c) { c.forEach(function (_, id) { if (!shapeById(id)) c.delete(id); }); });
+  }
+  function decalCached(mesh, d, regs) {
+    var rk = regs.length + ':' + regs.map(function (r) { return r.outer.length + ',' + r.outer[0] + ',' + r.holes.length; }).join(';');
+    var key = meshKey(mesh) + '|' + JSON.stringify([d.src, d.text, d.font, d.F, d.w, d.rot, d.mode, d.layers, d.wrap, d.pat, d.ph, d.cell, d.line, d.around]) + '|' + rk;
+    var hit = decCache.get(d.id); if (hit && hit.key === key) return hit.r;
+    var r = applyOneDecal(mesh, d, regs);
+    decCache.set(d.id, { key: key, r: r }); // only the latest result per inlay, to keep memory down
+    return r;
+  }
   function applyDecals(gr, parts) {
     var decs = []; gr.mem.forEach(function (m) { decs = decs.concat(decalsOn(m.id)); });
     if (!decs.length) return parts;
@@ -4287,7 +4644,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       var tf = filOf(tgt), regs = decalRegions(d);
       if (!by[tf] || !regs.length) return;
       try {
-        var r = applyOneDecal(by[tf], d, regs);
+        var r = decalCached(by[tf], d, regs);
         by[tf] = r.target;
         var df = Math.min(Math.max(1, d.fil || 2), S.filaments.length);
         by[df] = by[df] || new G.Mesh(); by[df].append(r.inlay);
@@ -4298,9 +4655,22 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     out.decalMeshes = dm;
     return out;
   }
+  /* each object's cut result is kept, so changing one object doesn't re-cut the others it touches */
+  var cutCache = new Map();
+  function cutOne(s, cuts) {
+    var m = meshOf(s), b = m.bounds();
+    var rel = cuts.filter(function (c) { if (c.z1 <= b[2] || c.z0 >= b[5]) return false; var cb = G.bbox([c.pts]); return !(cb.maxX < b[0] || cb.minX > b[3] || cb.maxY < b[1] || cb.minY > b[4]); });
+    if (!rel.length) return m;
+    var v = s.mesh.v, n = v.length;
+    var key = s.id + '|' + n + ':' + s.mesh.f.length + ':' + v[0] + ':' + v[n >> 1] + ':' + v[n - 1] + ':' + b.join(',') + '|' + rel.map(function (c) { return c.z0 + ',' + c.z1 + ':' + c.pts.length + ':' + c.pts[0] + ':' + c.pts[c.pts.length >> 1]; }).join(';');
+    var hit = cutCache.get(s.id); if (hit && hit.key === key) return hit.r;
+    var r = G.cutMesh(m, rel);
+    cutCache.set(s.id, { key: key, r: r }); // only the latest result per object
+    return r;
+  }
   function buildMeshFor(mem, cuts) {
     var out = new G.Mesh(), gr = { mem: mem };
-    gr.mem.filter(function (s) { return s.kind === 'mesh'; }).forEach(function (s) { out.append(G.cutMesh(meshOf(s), cuts)); });
+    gr.mem.filter(function (s) { return s.kind === 'mesh'; }).forEach(function (s) { out.append(cutOne(s, cuts)); });
     var flat = gr.mem.filter(function (s) { return s.kind !== 'mesh'; });
     if (!flat.length) return out;
     var solids = [];
@@ -4701,7 +5071,8 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     if (hi - lo >= 4) setDecRange(d, lo, hi);
   }
   /* center an inlay on the face it sits on (or, for all-the-way-around, halfway up) */
-  function centerDecal(d) {
+  function centerDecal(d, how) { // how: 'both' | 'lr' (left-right only) | 'tb' (top-bottom only)
+    how = how || 'both'; var doA = how !== 'tb', doB = how !== 'lr';
     var tg = shapeById(d.target), m = tg ? targetPartMesh(tg.id) : null;
     if (!m || !d.F) return toast('Could not find the object under this inlay.');
     snapshot();
@@ -4720,17 +5091,21 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     }
     var o;
     var dw = d.w || 20;
-    if (area > Math.max(25, 0.3 * dw * dw) && a1 - a0 > 0.6 * dw) { var ca = (a0 + a1) / 2, cb = (b0 + b1) / 2; o = [F.o[0] + ca * F.r[0] + cb * F.u[0], F.o[1] + ca * F.r[1] + cb * F.u[1], F.o[2] + ca * F.r[2] + cb * F.u[2]]; d.F = { o: o, r: F.r, u: F.u, n: F.n }; }
+    if (area > Math.max(25, 0.3 * dw * dw) && a1 - a0 > 0.6 * dw) { var ca = doA ? (a0 + a1) / 2 : 0, cb = doB ? (b0 + b1) / 2 : 0; o = [F.o[0] + ca * F.r[0] + cb * F.u[0], F.o[1] + ca * F.r[1] + cb * F.u[1], F.o[2] + ca * F.r[2] + cb * F.u[2]]; d.F = { o: o, r: F.r, u: F.u, n: F.n }; }
     else { // curved: aim at the middle of the object as seen from the front of the inlay
       var B = m.bounds(), TB = setBox([tg]), c = [TB.cx, TB.cy, (TB.z0 + TB.z1) / 2], far = Math.max(B[3] - B[0], B[4] - B[1], B[5] - B[2]) + 20;
       var dn = (c[0] - F.o[0]) * F.n[0] + (c[1] - F.o[1]) * F.n[1] + (c[2] - F.o[2]) * F.n[2];
       var pc = [c[0] - dn * F.n[0], c[1] - dn * F.n[1], c[2] - dn * F.n[2]];
+      if (how !== 'both') { // keep the other direction where it is
+        var w = [pc[0] - F.o[0], pc[1] - F.o[1], pc[2] - F.o[2]], ka = doA ? w[0] * F.r[0] + w[1] * F.r[1] + w[2] * F.r[2] : 0, kb = doB ? w[0] * F.u[0] + w[1] * F.u[1] + w[2] * F.u[2] : 0;
+        pc = [F.o[0] + ka * F.r[0] + kb * F.u[0], F.o[1] + ka * F.r[1] + kb * F.u[1], F.o[2] + ka * F.r[2] + kb * F.u[2]];
+      }
       var hit = G.rayMesh(m, [pc[0] + F.n[0] * far, pc[1] + F.n[1] * far, pc[2] + F.n[2] * far], [-F.n[0], -F.n[1], -F.n[2]]);
       if (!hit) { changed(true); return toast('Could not find the middle of that surface.'); }
       var n = hit.n; if (n[0] * F.n[0] + n[1] * F.n[1] + n[2] * F.n[2] < 0) n = [-n[0], -n[1], -n[2]];
       d.F = G.surfaceFrame(hit.p, n);
     }
-    changed(true); toast('Centered on the face.');
+    changed(true); toast(how === 'lr' ? 'Centered left to right on the face.' : how === 'tb' ? 'Centered top to bottom on the face.' : 'Centered on the face.');
   }
   /* center objects on the biggest one, side by side or stacked on top */
   function centerOnBiggest(onTop) {
@@ -5557,7 +5932,8 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     }
     h += stepper('dec.w', 'Inlay width', 'mm', 1, 2, 250, 1);
     h += '<div class="field"><span class="lbl">Turn and place</span><div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))"><button data-act="drotL">⟲ 15°</button><button data-act="drotR">⟳ 15°</button><button data-act="dplace">Tap a new spot</button></div></div>' +
-      '<div class="btns"><button class="ghost" data-act="dcenter">' + (decv(d, 'around') ? 'Center it halfway up' : 'Center it on this face') + '</button></div>';
+      (decv(d, 'around') ? '<div class="btns"><button class="ghost" data-act="dcenter">Center it halfway up</button></div>' :
+        '<div class="field"><span class="lbl">Center on this face</span><div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))"><button data-act="dcenter-lr">Left\u2013right</button><button data-act="dcenter-tb">Top\u2013bottom</button><button data-act="dcenter">Both</button></div></div>');
     h += '<div class="field"><span class="lbl">Nudge 1 mm</span><div class="seg" style="grid-template-columns:repeat(4,minmax(0,1fr))"><button data-act="dn-l" aria-label="Nudge left">←</button><button data-act="dn-u" aria-label="Nudge up">↑</button><button data-act="dn-d" aria-label="Nudge down">↓</button><button data-act="dn-r" aria-label="Nudge right">→</button></div>' +
       '<p class="note">In 3D: drag the inlay to slide it, the yellow cube to resize it, and the orange ring to turn it.</p></div>';
     h += seg('dec.mode', 'Finish', [['flush', 'Flush'], ['raised', 'Raised'], ['sunken', 'Sunken']]);
@@ -5669,8 +6045,20 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   function changed(structure) {
     persist(); inlayDirty = true; S.showCheck = false;
     if (structure) renderPanel();
-    render2d(); update3dIfNeeded();
+    render2d(); later3d();
   }
+  /* the 3D rebuild runs once after a burst of changes (taps on + or −), after the screen has shown the new numbers */
+  var pend3d = false, slow3d = 0;
+  function later3d() {
+    if (!(S.tab === 'hinge' || S.view3d)) return;
+    if (pend3d) return; pend3d = true;
+    if (slow3d > 300) busy(true);
+    requestAnimationFrame(function () { setTimeout(function () {
+      pend3d = false; var t0 = performance.now(); pruneCaches();
+      try { update3dIfNeeded(); } finally { slow3d = performance.now() - t0; busy(false); }
+    }, 0); });
+  }
+  function busy(on) { var b = $('#busy'); if (b) b.style.display = on ? '' : 'none'; }
   function afterField(path) {
     if (path.indexOf('cut.') === 0) { if (S.view3d) draw3d(true); var ci = document.querySelector('[data-range="cut.pos"]'); if (ci && path !== 'cut.pos-live') ci.value = S.cut.pos; var cn = document.querySelector('[data-num="cut.pos"]'); if (cn) cn.value = fmt(S.cut.pos, 1); return; }
     if (path.indexOf('cn.') === 0) { var cc = shapeById(S.sel); if (cc && cc.kind === 'conn') { var cg = connGeom(cc); if (cg.move) moveObj(shapeById(cc.b), cg.move); } changed(true); return; }
@@ -5713,7 +6101,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     if ((a = t.getAttribute('data-fstyle')) && t.closest('#panel')) { var fs2 = fontTarget(a); if (fs2) { if (a === 'decal') snapshot(); fs2.font = fontOf(fs2.font); var kk = t.getAttribute('data-v'); fs2.font[kk] = !fs2.font[kk]; if (a === 'inlay') fitInlay(true); changed(true); } return; }
     if ((a = t.getAttribute('data-mfil'))) { snapshot(); selList().forEach(function (x) { if (x.role !== 'hole') x.fil = +a; }); S.fil = +a; changed(true); return; }
     if ((a = t.getAttribute('data-fil'))) { var sf = shapeById(S.sel); if (sf) { snapshot(); sf.fil = +a; S.fil = +a; changed(true); } return; }
-    if ((a = t.getAttribute('data-act'))) act(a);
+    if ((a = t.getAttribute('data-act'))) { if (a === 'font-rm') fontRmName = t.getAttribute('data-v'); act(a); }
   });
   function act(a) {
     var s = shapeById(S.sel);
@@ -5771,7 +6159,10 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       case 'conn-swap': if (s && s.kind === 'conn') { snapshot(); var t0 = s.a; s.a = s.b; s.b = t0; var cg2 = connGeom(s); if (cg2.move) moveObj(shapeById(s.b), cg2.move); changed(true); } break;
       case 'dn-l': case 'dn-r': case 'dn-u': case 'dn-d': if (s && s.kind === 'decal') nudgeDecal(s, a.slice(3)); break;
       case 'add-decal': if (s && s.kind !== 'decal') startPlacing(s.id, null); break;
+      case 'font-rm': (function () { var nm = fontRmName; if (nm) { removeMyFont(nm); gmCache.clear(); Object.keys(textCache).forEach(function (k) { delete textCache[k]; }); changed(true); } })(); break;
       case 'dcenter': if (s && s.kind === 'decal') centerDecal(s); break;
+      case 'dcenter-lr': if (s && s.kind === 'decal') centerDecal(s, 'lr'); break;
+      case 'dcenter-tb': if (s && s.kind === 'decal') centerDecal(s, 'tb'); break;
       case 'ctr-mid': centerOnBiggest(false); break;
       case 'ctr-top': centerOnBiggest(true); break;
       case 'dplace': if (s && s.kind === 'decal') startPlacing(s.target, s.id); break;
@@ -5926,6 +6317,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       }
       return;
     }
+    if (t.getAttribute('data-font') && t.closest('#panel') && fontMenuPick(t.value, function (n) { var ft2 = fontTarget(t.getAttribute('data-font')); if (n && ft2) { snapshot(); ft2.font = fontOf(ft2.font); ft2.font.family = n; fontReady(ft2.font, ft2.text || 'A'); if (t.getAttribute('data-font') === 'inlay') fitInlay(true); changed(true); } renderPanel(); })) { renderPanel(); return; }
     if (t.getAttribute('data-font') && t.closest('#panel')) { var ft = fontTarget(t.getAttribute('data-font')); if (ft) { if (t.getAttribute('data-font') === 'decal') snapshot(); ft.font = fontOf(ft.font); ft.font.family = t.value; fontReady(ft.font, ft.text || 'A'); if (t.getAttribute('data-font') === 'inlay') fitInlay(true); changed(true); } return; }
     if (t.getAttribute('data-moveplate')) { if (t.value) movePartToPlate(multiOn() ? selList().map(function (x) { return x.id; }) : S.sel, +t.value); return; }
     if (t.getAttribute('data-plate')) {
@@ -6091,6 +6483,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     }).catch(function () { });
   })();
   window.addEventListener('resize', function () { size2d(); render2d(); if (viewer.ok) viewer.draw(); });
+  loadMyFonts().then(function (l) { if (l.length) { Object.keys(textCache).forEach(function (k) { delete textCache[k]; }); gmCache.clear(); renderPanel(); render2d(); update3dIfNeeded(); } });
   /* ---------------- resizable / hideable side panel ---------------- */
   (function () {
     var panel = $('#panel'), grip = $('#grip'), btn = $('#gripBtn'), PW = 340, hidden = false;
@@ -6118,7 +6511,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   renderPanel();
   requestAnimationFrame(function () { size2d(); if (GS().length) fit2d(G.bbox(GS().map(outline))); render2d(); });
   if (!viewer.ok) toast('3D preview is not available on this device. Drawing and saving still work.', 6000);
-  window.__toS = toS; window.__inlayRegs = function () { return inlayRegions(); }; window.__viewer = viewer; window.__ps = { S: S, G: G, render2d: render2d, update3d: update3d, inlayMeshes: inlayMeshes, buildHinge: buildHinge, drawPartMesh: drawPartMesh, drawParts: drawParts, addShape: addShape, changed: changed };
+  window.__toS = toS; window.__inlayRegs = function () { return inlayRegions(); }; window.__viewer = viewer; window.__ps = { S: S, G: G, render2d: render2d, update3d: update3d, inlayMeshes: inlayMeshes, buildHinge: buildHinge, drawPartMesh: drawPartMesh, drawParts: drawParts, addShape: addShape, changed: changed, partGroups: function () { return partGroups(); }, cutList: function (g) { return cutList(g); }, shapesJson: function () { return shapesJson(); }, writeStore: function () { writeStore(); } };
 })();
 
 </script>

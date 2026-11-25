@@ -1,6 +1,6 @@
 # PrintSketch user guide
 
-**Version 1.18.** Tap **?** in the app to see which version you have.
+**Version 1.19.** Tap **?** in the app to see which version you have.
 
 ## Installing PrintSketch
 
@@ -63,7 +63,7 @@ Pick a tool on the left and draw on the grid. Every outline closes itself, and e
 | **Lines** | Tap each corner. Tap the orange first dot (or **Finish shape**) to close it. |
 | **Rect** | Drag from one corner to the opposite corner. |
 | **Circle** | Drag from the center outward. |
-| **Text** | Type text, pick one of 15 fonts, bold or italic, letter height and thickness. The letters come out as a group. |
+| **Text** | Type text, pick a font (see **Fonts** below), bold or italic, letter height and thickness. The letters come out as a group. |
 | **Photo** | Pick a photo of a sketch or logo. Use **Darkness cut-off** and **Traced width** to tune the outline. |
 
 - New shapes use the **Height for new shapes** shown when nothing is selected.
@@ -148,6 +148,10 @@ Each shape keeps its own height, so a hole never changes the part it cuts into. 
 4. Under **Keep**, choose **Both pieces** or just one side, then tap **Cut it**.
 
 With both pieces kept, each becomes its own object, moved apart a little; a flat cut sets the top piece down on the plate. That's the easy way to split a tall model into a body and a lid.
+
+**Angled cuts.** Under **Angle**, tilt the cut up to 60° either way. For **Flat across** that's **Tilt left / right** and **Tilt front / back**; for the upright directions it's **Turn (seen from above)** (a diagonal cut) and **Lean**. The blue plane follows as you change it. With both pieces kept, the top piece of a tilted flat cut is laid with its cut face down on the plate, ready to print without supports.
+
+**Cutting just part of it.** Tick **Only cut part of it** to take a block out instead of slicing all the way through: set its **Width** and **Depth** (or **Height**), and use the two **Move** settings to place it. The shaded block is what comes off. **Keep** then offers **Both pieces**, **The rest** or **The cut-off part**. It works with an angle too, for example to slice one corner off at a slant. Both pieces always come out closed and ready to print.
 
 ## Edges, snug lids, screw holes and jars
 
@@ -266,7 +270,7 @@ There are two ways to add an inlay. Use **Surface inlay** for most things; use t
 - Drag the **yellow cube** to resize it, or type **Inlay width**.
 - Drag the **orange ring** to turn it, or use the 15° buttons.
 - **Nudge 1 mm** arrows make fine moves. **Tap a new spot** moves it to another face.
-- **Center it on this face** moves it to the middle of the face it's on (on a round part, the middle as seen from that side). For a pattern that goes all the way around, the button is **Center it halfway up**; on a jar it stays below the threads.
+- **Center on this face**: **Left–right** centers it across the face and leaves its height alone, **Top–bottom** centers it up and down and leaves its side-to-side spot alone, and **Both** puts it dead center. The directions follow the face, not the text's own turn (on a top face, top–bottom means front to back). On a round part it uses the middle as seen from that side. For a pattern that goes all the way around, there's one button, **Center it halfway up**; on a jar it stays below the threads.
 - To get back to an inlay later, pick it from the **Object** list.
 
 **Inlay tab (flat sign or tag)**
@@ -280,6 +284,16 @@ There are two ways to add an inlay. Use **Surface inlay** for most things; use t
 - Keep letter strokes at least 1 mm wide. Thin script fonts need bigger letters.
 - On a rounded face (a can, a jar), the inlay wraps around the curve. On odd shapes like domes, check it in 3D.
 - To use several drawings as one inlay, group them first (see Selecting several, groups and plates).
+
+**Fonts**
+
+The font list (for 3D text, inlays and the Inlay tab) has three groups:
+
+- **Built in (work everywhere):** 39 fonts that look the same on the tablet and the PC, from plain and bold blocks to slab and fashion serifs, scripts, a typewriter, a stencil, comic and cartoon styles, and **Mountains of Christmas**. They need the internet the first time, then work offline.
+- **On this computer:** the common Windows and Mac fonts you have installed (Impact, Comic Sans, Times New Roman, Cooper Black and so on), the same ones Bambu Studio lists. On the tablet this list is short or missing. On the PC, **More → Show all fonts on this computer…** lists every installed font (Chrome asks permission first).
+- **My fonts:** **More → ＋ Add a font file (.ttf, .otf)…** loads a font you've downloaded. It stays in the app on that device. **Remove this font from the app** takes it out again.
+
+Fonts from **On this computer** and **My fonts** are only on that device: open the project on another device and that text uses a fallback font. Use a built-in font, or add the same font file there too.
 
 **Curved text and curved surfaces**
 
