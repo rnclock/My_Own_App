@@ -2976,14 +2976,14 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
 
   /* ---------------- state ---------------- */
   var S = {
-    tiltStep: 15, handles: 'normal', knitTex: { type: 'knit', cell: 5, depth: 0.8 },
+    tiltStep: 15, handles: 'normal', seam: { w: 1, d: 1, top: true }, hollowSep: false, knitTex: { type: 'knit', cell: 5, depth: 0.8 },
     plates: [{ id: 1, name: 'Main plate' }], plate: 1, multi: [], multiMode: false, groupNames: {}, tab: 'draw', view3d: false, tool: 'pen', fingerDraw: false, T: 4, lock: true, wall: 2, floorT: 2, openLine: false, lineW: 1.2, stand: { t: 5, taper: 100 }, loft: { hollow: false, wall: 2, floor: 2, dir: 'up' }, lastSave: {}, sphere: { d: 40, hollow: false, wall: 2, flat: 1 }, snap: true, rep: { mode: 'row', n: 4, dx: 15, dy: 15, cols: 3, rows: 2, ang: 360 }, spinAxis: 'left', jar: { d: 50, H: 60, wall: 2.4, pitch: 3, clr: 0.4 }, screw: { M: 3, head: 'csk', nut: false }, lid: { T: 2, lipH: 4, clr: 0.2, click: false }, fil: 1,
     filaments: ['#F5A04A', '#EDEDED', '#2B2B2B', '#3B7DD8'],
     shapes: [], sel: null, nextId: 1,
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.19';
+  var VERSION = '1.20';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
@@ -4746,7 +4746,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       }
       var m = shapePrism(s, zr);
       picks.push({ mesh: m, id: s.id });
-      if (s.role === 'hole') items.push({ mesh: m, color: '#e04848', alpha: isSelected(s.id) ? 0.4 : 0.2, overlay: isSelected(s.id) });
+      if (s.role === 'hole') { if (!s.seam || isSelected(s.id)) items.push({ mesh: m, color: '#e04848', alpha: isSelected(s.id) ? 0.4 : 0.2, overlay: isSelected(s.id) }); }
       else if (isSelected(s.id)) items.push({ mesh: m, color: '#4a90e2', alpha: 0.3, overlay: true });
     });
     if (S.cut) { var cp = cutPlaneMesh(); if (cp) items.push({ mesh: cp, color: '#4a90e2', alpha: 0.35 }); }
@@ -5108,6 +5108,51 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     changed(true); toast(how === 'lr' ? 'Centered left to right on the face.' : how === 'tb' ? 'Centered top to bottom on the face.' : 'Centered on the face.');
   }
   /* center objects on the biggest one, side by side or stacked on top */
+  /* seam grooves: where two selected objects meet side by side, cut a groove around the outside of the joint (front, top, back) */
+  function seamJoints(list) {
+    var solids = list.filter(function (s) { return s.role !== 'hole' && s.kind !== 'decal' && s.kind !== 'conn'; }), out = [], tol = 0.4;
+    for (var i = 0; i < solids.length; i++) for (var j = i + 1; j < solids.length; j++) {
+      var A = solids[i], B = solids[j], a = setBox([A]), b = setBox([B]);
+      [['x', a.maxX, b.minX], ['x', b.maxX, a.minX], ['y', a.maxY, b.minY], ['y', b.maxY, a.minY]].forEach(function (c) {
+        if (Math.abs(c[1] - c[2]) > tol) return;
+        var at = (c[1] + c[2]) / 2, lo = c[0] === 'x' ? Math.max(a.minY, b.minY) : Math.max(a.minX, b.minX), hi = c[0] === 'x' ? Math.min(a.maxY, b.maxY) : Math.min(a.maxX, b.maxX);
+        var z0 = Math.max(a.z0, b.z0), z1 = Math.min(a.z1, b.z1);
+        if (hi - lo < 2 || z1 - z0 < 1) return;
+        out.push({ axis: c[0], at: at, lo: lo, hi: hi, z0: z0, z1: z1, flatTop: Math.abs(a.z1 - b.z1) < 0.1, ids: [A.id, B.id] });
+      });
+    }
+    return out;
+  }
+  function seamHolesOf(list) { var ids = list.map(function (s) { return s.id; }); return S.shapes.filter(function (h) { return h.seam && h.seamOf && h.seamOf.some(function (id) { return ids.indexOf(id) >= 0; }); }); }
+  function addSeams() {
+    var list = selList(), joints = seamJoints(list), K = S.seam, w = Math.max(0.2, K.w), d = Math.max(0.2, K.d);
+    if (!joints.length) return toast('No joints found. The objects need to sit right up against each other, side by side.', 6000);
+    snapshot();
+    var old = seamHolesOf(list); S.shapes = S.shapes.filter(function (x) { return old.indexOf(x) < 0; });
+    var grp = list[0].grp && list.every(function (s) { return s.grp === list[0].grp; }) ? list[0].grp : null;
+    if (!grp) { grp = (Date.now() % 1000000000) + 7; S.groupNames[grp] = 'Seamed boxes'; list.forEach(function (s) { s.grp = grp; }); }
+    var made = 0;
+    joints.forEach(function (J) {
+      var hw = w / 2, rects = [];
+      var R = function (x0, y0, x1, y1) { return J.axis === 'x' ? G.rectPts(x0, y0, x1, y1) : G.rectPts(y0, x0, y1, x1); }; // (along the joint, across it) -> x, y
+      // the joint runs along 'lo..hi'; across it is 'at'
+      rects.push({ pts: R(J.at - hw, J.hi - d, J.at + hw, J.hi + 1), through: true });   // one outside face
+      rects.push({ pts: R(J.at - hw, J.lo - 1, J.at + hw, J.lo + d), through: true });   // the other outside face
+      if (K.top && J.flatTop) rects.push({ pts: R(J.at - hw, J.lo - 1, J.at + hw, J.hi + 1), through: false, z: J.z1 - d, h: d + 1 });
+      rects.forEach(function (r) {
+        var pts = r.pts;
+        var hs = { id: S.nextId++, kind: 'rect', raw: pts, holes: [], smooth: 0, role: 'hole', z: r.through ? 0 : r.z, h: r.through ? J.z1 - J.z0 : r.h, through: r.through, fil: 1, seam: true, seamOf: J.ids, name: 'Seam groove', grp: grp };
+        addObj(hs); made++;
+      });
+    });
+    S.multi = groupMembers(list[0]).map(function (x) { return x.id; }); S.sel = list[0].id;
+    changed(true);
+    toast('Added ' + joints.length + ' seam' + (joints.length > 1 ? 's' : '') + ' (' + made + ' grooves). They move with the boxes as a group. Remove seam grooves takes them out.', 6000);
+  }
+  function removeSeams() {
+    var old = seamHolesOf(selList().concat(S.sel ? [shapeById(S.sel)] : []).filter(Boolean)); if (!old.length) return toast('No seam grooves on these.');
+    snapshot(); S.shapes = S.shapes.filter(function (x) { return old.indexOf(x) < 0; }); S.multi = S.multi.filter(function (id) { return shapeById(id); }); if (!shapeById(S.sel)) S.sel = null; changed(true); toast('Seam grooves removed.');
+  }
   function centerOnBiggest(onTop) {
     var l = selList(); if (l.length < 2) return;
     var units = []; l.forEach(function (x) { var mem = x.grp ? l.filter(function (y) { return y.grp === x.grp; }) : [x]; if (!units.some(function (u) { return u[0] === mem[0]; })) units.push(mem); });
@@ -5310,8 +5355,16 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   }
   /* keyboard copy / paste / duplicate (holes, inlays and connections come along) */
   var clip = null, pasteN = 0;
+  /* copy / duplicate: just what's selected (whole groups you made with Group them), with its own inlays, and connections between the copied pieces */
+  function selBundle() {
+    var ids = {}, list = multiOn() ? selList() : (S.sel ? [shapeById(S.sel)] : []);
+    list.forEach(function (s) { if (!s) return; if (s.kind === 'decal') s = shapeById(s.target); if (!s) return; groupMembers(s).forEach(function (x) { ids[x.id] = 1; }); });
+    S.shapes.forEach(function (x) { if (x.kind === 'decal' && ids[x.target]) ids[x.id] = 1; });
+    S.shapes.forEach(function (x) { if (x.kind === 'conn' && ids[x.a] && ids[x.b]) ids[x.id] = 1; });
+    return S.shapes.filter(function (x) { return ids[x.id]; }).map(cleanShape);
+  }
   function bundleItem() {
-    var shapes = partBundle(); if (!shapes.length) return null;
+    var shapes = selBundle(); if (!shapes.length) return null;
     var gnames = {}; shapes.forEach(function (x) { if (x.grp && S.groupNames[x.grp]) gnames[x.grp] = S.groupNames[x.grp]; });
     return { name: (shapes.filter(function (x) { return x.name; })[0] || {}).name || 'Part', shapes: JSON.parse(JSON.stringify(shapes)), groupNames: gnames };
   }
@@ -5759,6 +5812,10 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       (connsOn(s.id).length ? '<p class="note">Connected: ' + connsOn(s.id).map(function (c) { return esc(CONN_NAMES[c.type]); }).join(', ') + '. Pick it in the Object list to change it.</p>' : '') + '</div>';
     if (!isHole) h += '<div class="box"><h3>Inlay on a surface</h3><p class="note">Put text or a drawing into any face of this object, in another color.</p><button class="ghost" data-act="add-decal">Add inlay to a surface</button>' +
       (decalsOn(s.id).length ? '<p class="note">' + decalsOn(s.id).length + ' inlay' + (decalsOn(s.id).length > 1 ? 's' : '') + ' on this object. Pick them in the Object list to change them.</p>' : '') + '</div>';
+    if (!isHole && isMesh) h += '<div class="box"><h3>Make it a box</h3><p class="note">Hollows this model out, leaving walls and a floor, open at the top. It follows the model\u2019s own shape, so it works on combined, imported and spun objects too.</p>' +
+      stepper('wall', 'Wall thickness', 'mm', 0.4, 0.8, 20, 1) + stepper('floorT', 'Floor thickness', 'mm', 0.4, 0.4, 50, 1) +
+      (s.compound ? toggle('hollowSep', 'Keep inside walls between the pieces') : '') +
+      '<button class="ghost" data-act="hollow-mesh">Hollow it out</button></div>';
     if (!isHole && !isMesh) h += '<div class="box"><h3>Make it a box</h3><p class="note">Hollows this shape out, leaving walls and a floor.</p>' +
       stepper('wall', 'Wall thickness', 'mm', 0.4, 0.8, 20, 1) + stepper('floorT', 'Floor thickness', 'mm', 0.4, 0, 50, 1) +
       '<button class="ghost" data-act="hollow">Hollow it out</button>' +
@@ -5880,6 +5937,10 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     h += '<div class="box"><h3>Size (all together)</h3>' + stepper('multi.w', 'X · width', 'mm', 1, 0.5, 256, 1) + stepper('multi.d', 'Y · depth', 'mm', 1, 0.5, 256, 1) +
       toggle('lock', 'Keep proportions when resizing') + stepper('multi.h', 'Z · height', 'mm', 1, 0.2, 256, 1) + '</div>';
     h += '<div class="box"><h3>Position <span class="note" style="font-weight:400">(center of the selection)</span></h3>' + stepper('multi.cx', 'X', 'mm', 1, -300, 300, 1) + stepper('multi.cy', 'Y', 'mm', 1, -300, 300, 1) + stepper('multi.z', 'Raised off the plate', 'mm', 0.5, -255, 255, 1) + '</div>';
+    var sj = seamJoints(list), sh = seamHolesOf(list);
+    if (sj.length || sh.length) h += '<div class="box"><h3>Seam grooves</h3><p class="note">Makes touching objects look like separate pieces while they print as one: a groove goes around the outside of each joint' + (sj.length ? ' (' + sj.length + ' found)' : '') + '. The bottom stays flat.</p>' +
+      stepper('seam.w', 'Groove width', 'mm', 0.2, 0.4, 5, 1) + stepper('seam.d', 'Groove depth', 'mm', 0.2, 0.4, 5, 1) + toggle('seam.top', 'Groove over the top too') +
+      '<div class="btns">' + (sj.length ? '<button class="ghost" data-act="seam-add">' + (sh.length ? 'Redo seam grooves' : 'Add seam grooves') + '</button>' : '') + (sh.length ? '<button class="ghost" data-act="seam-rm">Remove seam grooves</button>' : '') + '</div></div>';
     h += '<div class="field"><span class="lbl">Center on each other</span><div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button data-act="ctr-mid">Center them</button><button data-act="ctr-top">Center on top</button></div><p class="note">The biggest one stays put; the others move to its center. <b>Center on top</b> also sets them on its top surface.</p></div>';
     h += '<div class="field"><span class="lbl">Line up</span><div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))"><button data-act="al-l">Left</button><button data-act="al-cx">Center</button><button data-act="al-r">Right</button><button data-act="al-t">Top</button><button data-act="al-cy">Middle</button><button data-act="al-b">Bottom</button></div></div>';
     if (list.length > 2) h += '<div class="field"><span class="lbl">Spread out evenly</span><div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button data-act="sp-x">Left to right</button><button data-act="sp-y">Bottom to top</button></div></div>';
@@ -6119,6 +6180,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       case 'flip': if (s) { snapshot(); flipShape(s); changed(true); } break;
       case 'role-solid': case 'role-hole': if (s) { snapshot(); s.role = a === 'role-hole' ? 'hole' : 'solid'; if (s.role === 'hole') s.through = true; changed(true); } break;
       case 'hollow': if (s) hollow(s); break;
+      case 'hollow-mesh': if (s && s.kind === 'mesh') hollowMesh(s); break;
       case 'make-lid': if (s) makeLid(s); break;
       case 'add-screw': if (s) addScrew(s); break;
       case 'edit-colors': colorEditor(); break;
@@ -6164,6 +6226,8 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       case 'dcenter-lr': if (s && s.kind === 'decal') centerDecal(s, 'lr'); break;
       case 'dcenter-tb': if (s && s.kind === 'decal') centerDecal(s, 'tb'); break;
       case 'ctr-mid': centerOnBiggest(false); break;
+      case 'seam-add': addSeams(); break;
+      case 'seam-rm': removeSeams(); break;
       case 'ctr-top': centerOnBiggest(true); break;
       case 'dplace': if (s && s.kind === 'decal') startPlacing(s.target, s.id); break;
       case 'place-cancel': S.placing = null; renderPanel(); break;
@@ -6217,6 +6281,39 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     });
     changed(true);
     toast('Hollowed out. The inside is a separate hole shape you can select and adjust.', 5000);
+  }
+  /* hollow a solid model (combined, imported, spun…): each slice is shrunk by the wall, above a floor, open at the top */
+  function hollowMesh(s) {
+    var m = meshOf(s), b = m.bounds(), wall = S.wall, fl = S.floorT, step = 0.5;
+    if (b[5] - b[2] <= fl + 0.6) return toast('The floor is as thick as the object is tall. Make the floor thinner.');
+    var runs = [], prev = null;
+    for (var z = b[2] + fl; z < b[5] - 1e-6; z += step) {
+      var z1 = Math.min(z + step, b[5]), mid = (z + z1) / 2 + 1.37e-6, rings = [];
+      var secs = G.sliceMesh(m, mid, null, true);
+      var gap = 0;
+      if (!S.hollowSep && secs.length > 1) { // joined pieces, or a rim split by seam grooves: bridge gaps up to 3 mm so the inside stays one space
+        gap = 1.5;
+        var grown = []; secs.forEach(function (r) { G.outsetRegion(r, gap).forEach(function (g) { grown.push(g.outer ? g : { outer: g, holes: [] }); }); });
+        secs = G.unionRegions(grown.map(function (r) { return { outer: r.outer, holes: r.holes || [] }; }), []);
+      }
+      secs.forEach(function (r) { G.insetRegion(r, wall + gap).forEach(function (o) { if (o.length >= 3) rings.push(o); }); });
+      var sig = rings.map(function (r) { return r.length + ':' + r[0][0].toFixed(2) + ',' + r[0][1].toFixed(2); }).join('|');
+      if (prev && prev.sig === sig) { prev.z1 = z1; continue; }
+      prev = { sig: sig, rings: rings, z0: z, z1: z1 }; runs.push(prev);
+    }
+    if (prev) prev.z1 = b[5] + 1; // open at the top
+    var cuts = []; runs.forEach(function (r) { r.rings.forEach(function (pts) { cuts.push({ pts: pts, z0: r.z0, z1: r.z1 }); }); });
+    if (!cuts.length) return toast('This is too thin for ' + fmt(wall) + ' mm walls.');
+    snapshot();
+    toast('Hollowing\u2026', 2000);
+    setTimeout(function () {
+      if (s.compound) {
+        var pcs = splitCompound(s).map(function (pc) { return { fil: pc.fil, mesh: G.cutMesh(pc.mesh, cuts) }; }).filter(function (pc) { return pc.mesh.f.length; });
+        var mm = mergePieces(pcs, filOf(s)); s.mesh = { v: mm.v, f: mm.f, fc: mm.fc }; s.pieces = mm.pieces;
+      } else { var r = G.cutMesh(m, cuts); s.mesh = { v: r.v.map(function (x) { return Math.round(x * 1e4) / 1e4; }), f: r.f, fc: r.fc }; }
+      delete s.texBase; refreshSilhouette(s); changed(true);
+      toast('Hollowed out: ' + fmt(wall) + ' mm walls, ' + fmt(fl) + ' mm floor, open at the top. Undo puts it back.', 5000);
+    }, 30);
   }
   function boxHoleOf(s) {
     var o = outline(s), best = null, ba = 0;

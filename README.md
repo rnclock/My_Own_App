@@ -1,6 +1,6 @@
 # PrintSketch
 
-**Version 1.19**
+**Version 1.20**
 
 📖 **[User guide](USER_GUIDE.md)**: how to use every feature of PrintSketch.
 

@@ -1,6 +1,6 @@
 # PrintSketch user guide
 
-**Version 1.19.** Tap **?** in the app to see which version you have.
+**Version 1.20.** Tap **?** in the app to see which version you have.
 
 ## Installing PrintSketch
 
@@ -121,7 +121,7 @@ For **Circle**, put one copy where you want it first; the copies turn around the
 
 **Redo.** **Redo** under Undo (or Ctrl+Y) puts back what Undo took away.
 
-**Copy and paste.** With a keyboard, **Ctrl+C** copies what's selected (with its holes, inlays and connections), **Ctrl+V** pastes a copy beside it (press again for more; it works on another plate too), and **Ctrl+D** duplicates in one step. Copies are placed so they don't touch the original, since touching parts join.
+**Copy and paste.** With a keyboard, **Ctrl+C** copies just what's selected (a whole group if it's one you made with **Group them**, plus its inlays and the connections between the copied pieces; other objects it touches stay behind), **Ctrl+V** pastes a copy beside it (press again for more; it works on another plate too), and **Ctrl+D** duplicates in one step. Copies are placed so they don't touch the original, since touching parts join.
 
 ## Holes, boxes and cutting
 
@@ -139,6 +139,10 @@ Each shape keeps its own height, so a hole never changes the part it cuts into. 
 2. Set **Wall thickness** and **Floor thickness**, then tap **Hollow it out**. The top is left open.
 3. The inside becomes its own hole shape, so you can still select it and change it.
 4. For a lid, draw the same outline again with a small height, then use **Connect** to hinge it (see Connecting two parts).
+
+**Make it a box for combined and 3D models.** Combined, imported, spun and other 3D objects have **Make it a box** too: set **Wall thickness** and **Floor thickness** and tap **Hollow it out**. It follows the model's own shape slice by slice, open at the top. Pieces joined into one object get one open space inside; tick **Keep inside walls between the pieces** for separate compartments. It's built into the model (Undo and hollow again to change the walls), and Snug-fit lid is for drawn shapes only. Curved models get fine 0.2 mm steps inside, which print the same but make the file bigger.
+
+**Seam grooves.** To make touching objects look like separate pieces while they print as one solid, select them and open **Seam grooves**. Set **Groove width** and **Groove depth** (1 mm each is a good start) and tap **Add seam grooves**: a groove goes up the front, over the top (untick **Groove over the top too** to skip it) and down the back of every joint, and the bottom stays flat. The grooves and objects become a group so they move together. **Redo seam grooves** applies new sizes; **Remove seam grooves** takes them out. Add seams before **Combine into one object** or **Make it a box**, and the seams carry through.
 
 **Cut (slice)**
 
