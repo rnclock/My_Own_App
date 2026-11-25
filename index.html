@@ -11,7 +11,10 @@
 html,body{margin:0;height:100%;background:#16181D;color:#E8EAED;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
 button,input,select{font:inherit;color:inherit}
 #app{display:flex;flex-direction:column;height:100vh;height:100dvh}
-header{height:60px;flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 14px;border-bottom:1px solid #2A2F38}
+header{height:60px;flex:none;display:flex;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid #2A2F38}
+.hleft{flex:0 1 auto;min-width:0;display:flex;align-items:center;gap:12px}
+.hright{flex:none;margin-left:auto;display:flex;align-items:center;justify-content:flex-end;gap:8px}
+@media (max-width:1300px){.brand span{display:none}}
 .brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:18px;white-space:nowrap}
 nav{display:flex;gap:4px;background:#1F232A;padding:4px;border-radius:12px}
 nav button{min-height:44px;padding:0 18px;border-radius:9px;border:0;background:transparent;color:#C9CED6;font-weight:500;font-size:15px;cursor:pointer}
@@ -36,17 +39,24 @@ nav button.on{background:#F5A04A;color:#16181D;font-weight:600}
 .hudbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;background:#16181D;padding:8px 14px 8px 8px;border-radius:14px;width:min(560px,92%)}
 .hudbar input{flex:1}
 .hudbar .val{min-width:130px;text-align:right;font-size:14px;font-weight:600;color:#F5A04A}
-#pickers{position:absolute;left:14px;top:14px;display:flex;flex-wrap:wrap;gap:8px;max-width:calc(100% - 160px);z-index:2}
-#objpick,#platepick{display:flex;align-items:center;gap:8px;background:#16181D;border-radius:12px;padding:4px 4px 4px 12px;max-width:100%}
-#platepick select{min-height:42px;max-width:240px;width:auto;background:#252A33;border:1px solid #3A404B;font-size:14px}
-#objpick select{min-height:42px;max-width:340px;width:auto;background:#252A33;border:1px solid #3A404B;font-size:14px}
+#pickers{display:flex;gap:8px;min-width:0;flex:1 1 auto}
+#objpick,#platepick{display:flex;align-items:center;gap:8px;min-width:0}
+#platepick{flex:0 1 auto}#objpick{flex:0 1 auto}
+#platepick select{min-height:40px;max-width:210px;min-width:90px;width:auto;background:#252A33;border:1px solid #3A404B;font-size:14px}
+#objpick select{min-height:40px;max-width:300px;min-width:90px;width:auto;background:#252A33;border:1px solid #3A404B;font-size:14px}
 .objlbl{font-size:13px;color:#A7ADB7}
-#vt{position:absolute;right:14px;top:14px;display:flex;background:#16181D;border-radius:10px;padding:3px;gap:3px}
-#vt button{min-height:40px;min-width:52px;border:0;border-radius:8px;background:transparent;color:#C9CED6;font-weight:600;cursor:pointer}
+#vt{display:flex;background:#1F232A;border-radius:12px;padding:4px;gap:3px;flex:none}
+#vt button{min-height:44px;min-width:52px;border:0;border-radius:8px;background:transparent;color:#C9CED6;font-weight:600;cursor:pointer}
 #vt button.on{background:#3A404B;color:#fff}
-#views{position:absolute;right:14px;top:66px;display:flex;flex-direction:column;background:#16181D;border-radius:10px;padding:3px;gap:3px}
+#views{position:absolute;right:14px;top:14px;display:flex;flex-direction:column;background:#16181D;border-radius:10px;padding:3px;gap:3px}
 #views button{min-height:38px;min-width:70px;border:0;border-radius:8px;background:transparent;color:#C9CED6;font-weight:600;font-size:13px;cursor:pointer}
 #views button:active{background:#3A404B}
+#grip{width:12px;flex:none;cursor:col-resize;display:flex;align-items:center;justify-content:center;background:#16181D;border-left:1px solid #2A2F38;touch-action:none;position:relative}
+#grip::before{content:'';width:4px;height:44px;border-radius:2px;background:#3A404B}
+#grip:hover::before,#grip.drag::before{background:#F5A04A}
+#gripBtn{position:absolute;top:10px;left:50%;transform:translateX(-50%);width:28px;height:44px;border-radius:8px;border:1px solid #3A404B;background:#1F232A;color:#C9CED6;cursor:pointer;padding:0;font-size:14px;z-index:3}
+#panel.hide{display:none}
+#grip.closed{width:36px}#grip.closed::before{display:none}
 #panel{width:340px;flex:none;border-left:1px solid #2A2F38;background:#1A1D23;padding:18px;overflow-y:auto;display:flex;flex-direction:column;gap:14px}
 #panel h2{margin:0;font-size:18px}
 #panel h3{margin:0 0 6px;font-size:15px}
@@ -127,9 +137,9 @@ textarea.txt{width:100%;resize:vertical;min-height:84px;font:inherit;line-height
 <body>
 <div id="app">
   <header>
-    <div class="brand"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#F5A04A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"></path><path d="M4 7.5l8 4.5 8-4.5M12 12v9"></path></svg><span>PrintSketch</span></div>
+    <div class="hleft"><div class="brand"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#F5A04A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"></path><path d="M4 7.5l8 4.5 8-4.5M12 12v9"></path></svg><span>PrintSketch</span></div><div id="pickers"><div id="platepick" style="display:none"></div><div id="objpick" style="display:none"></div></div><div id="vt"><button id="vt2" data-act="v2" class="on">2D</button><button id="vt3" data-act="v3">3D</button></div></div>
     <nav aria-label="Steps"><button data-tab="draw" class="on">Draw</button><button data-tab="inlay">Inlay</button></nav>
-    <div style="display:flex;gap:8px"><button class="projbtn trashbtn" id="trashBtn" data-act="del" aria-label="Delete the selected object" title="Delete"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v6M14 11v6"></path></svg></button><button class="projbtn" id="projBtn" aria-label="Project: save or open"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"></path></svg><span>Project</span></button><button class="iconbtn" id="helpBtn" aria-label="Help">?</button></div>
+    <div class="hright"><button class="projbtn trashbtn" id="trashBtn" data-act="del" aria-label="Delete the selected object" title="Delete"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v6M14 11v6"></path></svg></button><button class="projbtn" id="projBtn" aria-label="Project: save or open"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"></path></svg><span>Project</span></button><button class="iconbtn" id="helpBtn" aria-label="Help">?</button></div>
   </header>
   <div id="body">
     <div id="rail" role="toolbar" aria-label="Drawing tools">
@@ -151,11 +161,10 @@ textarea.txt{width:100%;resize:vertical;min-height:84px;font:inherit;line-height
     <div id="stage">
       <canvas id="c2"></canvas>
       <canvas id="c3" style="display:none"></canvas>
-      <div id="pickers"><div id="platepick" style="display:none"></div><div id="objpick" style="display:none"></div></div>
-      <div id="vt"><button id="vt2" data-act="v2" class="on">2D</button><button id="vt3" data-act="v3">3D</button></div>
       <div id="views" style="display:none" aria-label="Camera"><button data-act="cam-top">Top</button><button data-act="cam-front">Front</button><button data-act="cam-side">Side</button><button data-act="cam-bottom">Bottom</button></div>
       <div id="hud"></div>
     </div>
+    <div id="grip" role="separator" aria-orientation="vertical" aria-label="Drag to resize the panel" title="Drag to resize · double-click to reset"><button id="gripBtn" aria-label="Hide the panel" title="Hide or show the panel">›</button></div>
     <aside id="panel" aria-label="Settings"></aside>
   </div>
 </div>
@@ -2823,7 +2832,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.17';
+  var VERSION = '1.18';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
@@ -4691,6 +4700,52 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     var lo = (tg.z || 0) + 2, hi = objTop(tg) - th - 1.5;
     if (hi - lo >= 4) setDecRange(d, lo, hi);
   }
+  /* center an inlay on the face it sits on (or, for all-the-way-around, halfway up) */
+  function centerDecal(d) {
+    var tg = shapeById(d.target), m = tg ? targetPartMesh(tg.id) : null;
+    if (!m || !d.F) return toast('Could not find the object under this inlay.');
+    snapshot();
+    if (decv(d, 'around')) {
+      if (jarThreadH(tg)) fitJarDecal(d);
+      else { var tb = setBox([tg]), ph = decv(d, 'ph'), zc = (tb.z0 + tb.z1) / 2; setDecRange(d, zc - ph / 2, zc + ph / 2); }
+      changed(true); return toast('Centered halfway up the object.');
+    }
+    var F = d.F, loc = G.toFrame(m, F), v = loc.v, f = loc.f, a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity, area = 0;
+    for (var i = 0; i < f.length; i += 3) { // the flat face the inlay is on: triangles facing the same way, in the same plane
+      var p = f[i] * 3, q = f[i + 1] * 3, r = f[i + 2] * 3;
+      if (Math.abs(v[p + 2]) > 0.05 || Math.abs(v[q + 2]) > 0.05 || Math.abs(v[r + 2]) > 0.05) continue;
+      var ex = v[q] - v[p], ey = v[q + 1] - v[p + 1], fx = v[r] - v[p], fy = v[r + 1] - v[p + 1], cr = ex * fy - ey * fx;
+      if (cr <= 1e-9) continue; area += cr / 2;
+      [p, q, r].forEach(function (k) { a0 = Math.min(a0, v[k]); a1 = Math.max(a1, v[k]); b0 = Math.min(b0, v[k + 1]); b1 = Math.max(b1, v[k + 1]); });
+    }
+    var o;
+    var dw = d.w || 20;
+    if (area > Math.max(25, 0.3 * dw * dw) && a1 - a0 > 0.6 * dw) { var ca = (a0 + a1) / 2, cb = (b0 + b1) / 2; o = [F.o[0] + ca * F.r[0] + cb * F.u[0], F.o[1] + ca * F.r[1] + cb * F.u[1], F.o[2] + ca * F.r[2] + cb * F.u[2]]; d.F = { o: o, r: F.r, u: F.u, n: F.n }; }
+    else { // curved: aim at the middle of the object as seen from the front of the inlay
+      var B = m.bounds(), TB = setBox([tg]), c = [TB.cx, TB.cy, (TB.z0 + TB.z1) / 2], far = Math.max(B[3] - B[0], B[4] - B[1], B[5] - B[2]) + 20;
+      var dn = (c[0] - F.o[0]) * F.n[0] + (c[1] - F.o[1]) * F.n[1] + (c[2] - F.o[2]) * F.n[2];
+      var pc = [c[0] - dn * F.n[0], c[1] - dn * F.n[1], c[2] - dn * F.n[2]];
+      var hit = G.rayMesh(m, [pc[0] + F.n[0] * far, pc[1] + F.n[1] * far, pc[2] + F.n[2] * far], [-F.n[0], -F.n[1], -F.n[2]]);
+      if (!hit) { changed(true); return toast('Could not find the middle of that surface.'); }
+      var n = hit.n; if (n[0] * F.n[0] + n[1] * F.n[1] + n[2] * F.n[2] < 0) n = [-n[0], -n[1], -n[2]];
+      d.F = G.surfaceFrame(hit.p, n);
+    }
+    changed(true); toast('Centered on the face.');
+  }
+  /* center objects on the biggest one, side by side or stacked on top */
+  function centerOnBiggest(onTop) {
+    var l = selList(); if (l.length < 2) return;
+    var units = []; l.forEach(function (x) { var mem = x.grp ? l.filter(function (y) { return y.grp === x.grp; }) : [x]; if (!units.some(function (u) { return u[0] === mem[0]; })) units.push(mem); });
+    if (units.length < 2) return toast('Select at least two objects or groups.');
+    var info = units.map(function (u) { var b = setBox(u); return { u: u, b: b, a: b.w * b.h }; }).sort(function (p, q) { return q.a - p.a; });
+    var base = info[0].b; snapshot();
+    info.slice(1).forEach(function (it) {
+      var dx = base.cx - it.b.cx, dy = base.cy - it.b.cy;
+      it.u.forEach(function (x) { mapShape(x, function (px, py) { return [px + dx, py + dy]; }); if (onTop && !(x.role === 'hole' && x.through !== false)) shiftZ(x, base.z1 - it.b.z0); });
+    });
+    changed(true);
+    toast((onTop ? 'Stacked on top of' : 'Centered on') + ' ' + (units.length > 2 ? 'the biggest one' : 'the bigger one') + '. It stayed where it was.', 5000);
+  }
   function placeAt(x, y) {
     var P = S.placing, m = targetPartMesh(P.target);
     if (!m) { S.placing = null; renderPanel(); return; }
@@ -5290,14 +5345,15 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     }
     h += '<div class="box"><h3>Size</h3>' +
       stepper('sel.w', 'X · width', 'mm', 1, 0.5, 256, 1) + stepper('sel.d', 'Y · depth', 'mm', 1, 0.5, 256, 1) + toggle('lock', 'Keep proportions when resizing');
-    if (!isHole) h += stepper('sel.h', 'Z · height', 'mm', 1, 0.2, 256, 1) + stepper('sel.z', 'Raised off the plate', 'mm', 0.5, -255, 255, 1) + ((s.z || 0) < 0 ? '<p class="note">Below the plate: the part under it is cut off flat, giving a flat bottom.</p>' : '');
+    if (!isHole) h += stepper('sel.h', 'Z · height', 'mm', 1, 0.2, 256, 1);
     else {
       h += toggle('sel.through', 'Cut all the way through');
       if (s.through === false) h += stepper('sel.z', 'Starts at height (floor left under it)', 'mm', 0.5, 0, 255, 1) + stepper('sel.h', 'Hole depth', 'mm', 1, 0.2, 256, 1);
     }
     h += '</div>';
     h += '<div class="box"><h3>Position <span class="note" style="font-weight:400">(center of the shape)</span></h3>' +
-      stepper('sel.cx', 'X', 'mm', 1, -300, 300, 1) + stepper('sel.cy', 'Y', 'mm', 1, -300, 300, 1) + '</div>';
+      stepper('sel.cx', 'X', 'mm', 1, -300, 300, 1) + stepper('sel.cy', 'Y', 'mm', 1, -300, 300, 1) +
+      (isHole ? '' : stepper('sel.z', 'Raised off the plate', 'mm', 0.5, -255, 255, 1) + ((s.z || 0) < 0 ? '<p class="note">Below the plate: the part under it is cut off flat, giving a flat bottom.</p>' : '')) + '</div>';
     h += '<div class="box"><h3>Turn and tilt</h3><div class="field"><span class="lbl">Turn and flip</span><div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))"><button data-act="rotL">⟲ 15°</button><button data-act="rotR">⟳ 15°</button><button data-act="flip">Mirror</button></div></div>';
     if (!isHole) h += stepper('tiltStep', 'Tilt by', '°', 5, 1, 90, 0) +
       '<div class="field"><div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button data-act="tilt-l">Left side up</button><button data-act="tilt-r">Right side up</button><button data-act="tilt-f">Front up</button><button data-act="tilt-b">Back up</button></div></div>' +
@@ -5447,8 +5503,9 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     h += '<div class="btns">' + (sameGrp ? '<button class="ghost" data-act="m-ungroup">Ungroup</button>' + (list.every(function (x) { return x.kind !== 'mesh'; }) ? '<button class="ghost" data-act="m-to-inlay">Use as inlay →</button>' : '') : '<button class="primary" data-act="m-group">Group them</button>') + '</div>';
     if (list.some(function (x) { return x.role !== 'hole'; })) h += '<div class="box"><h3>Combine into one object</h3><p class="note">Joins these into a single object, keeping their colors, holes and inlays, so you can connect it, cut it, tilt it and use the other single-object tools. Undo splits it back.</p><button class="ghost" data-act="m-combine">Combine into one object</button></div>';
     h += '<div class="box"><h3>Size (all together)</h3>' + stepper('multi.w', 'X · width', 'mm', 1, 0.5, 256, 1) + stepper('multi.d', 'Y · depth', 'mm', 1, 0.5, 256, 1) +
-      toggle('lock', 'Keep proportions when resizing') + stepper('multi.h', 'Z · height', 'mm', 1, 0.2, 256, 1) + stepper('multi.z', 'Raised off the plate', 'mm', 0.5, -255, 255, 1) + '</div>';
-    h += '<div class="box"><h3>Position <span class="note" style="font-weight:400">(center of the selection)</span></h3>' + stepper('multi.cx', 'X', 'mm', 1, -300, 300, 1) + stepper('multi.cy', 'Y', 'mm', 1, -300, 300, 1) + '</div>';
+      toggle('lock', 'Keep proportions when resizing') + stepper('multi.h', 'Z · height', 'mm', 1, 0.2, 256, 1) + '</div>';
+    h += '<div class="box"><h3>Position <span class="note" style="font-weight:400">(center of the selection)</span></h3>' + stepper('multi.cx', 'X', 'mm', 1, -300, 300, 1) + stepper('multi.cy', 'Y', 'mm', 1, -300, 300, 1) + stepper('multi.z', 'Raised off the plate', 'mm', 0.5, -255, 255, 1) + '</div>';
+    h += '<div class="field"><span class="lbl">Center on each other</span><div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button data-act="ctr-mid">Center them</button><button data-act="ctr-top">Center on top</button></div><p class="note">The biggest one stays put; the others move to its center. <b>Center on top</b> also sets them on its top surface.</p></div>';
     h += '<div class="field"><span class="lbl">Line up</span><div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))"><button data-act="al-l">Left</button><button data-act="al-cx">Center</button><button data-act="al-r">Right</button><button data-act="al-t">Top</button><button data-act="al-cy">Middle</button><button data-act="al-b">Bottom</button></div></div>';
     if (list.length > 2) h += '<div class="field"><span class="lbl">Spread out evenly</span><div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))"><button data-act="sp-x">Left to right</button><button data-act="sp-y">Bottom to top</button></div></div>';
     if (list.filter(function (x) { return x.kind !== 'mesh' && x.role !== 'hole'; }).length >= 2) h += '<div class="box"><h3>Blend between shapes</h3><p class="note">Makes one smooth solid passing through each outline at its height (set each one\u2019s <b>Raised off the plate</b>). Great for hulls, bottles and vases that aren\u2019t round.</p>' +
@@ -5499,7 +5556,8 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       h += dr.length ? '<div class="field"><select data-dshape="1" aria-label="Drawing for the inlay"><option value="">Choose a drawing…</option>' + groupOptions(null) + dr.map(function (x) { return '<option value="' + x.id + '">' + esc(shapeLabel(x)) + '</option>'; }).join('') + '</select></div>' : '<p class="note">Draw a shape in 2D first.</p>';
     }
     h += stepper('dec.w', 'Inlay width', 'mm', 1, 2, 250, 1);
-    h += '<div class="field"><span class="lbl">Turn and place</span><div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))"><button data-act="drotL">⟲ 15°</button><button data-act="drotR">⟳ 15°</button><button data-act="dplace">Tap a new spot</button></div></div>';
+    h += '<div class="field"><span class="lbl">Turn and place</span><div class="seg" style="grid-template-columns:repeat(3,minmax(0,1fr))"><button data-act="drotL">⟲ 15°</button><button data-act="drotR">⟳ 15°</button><button data-act="dplace">Tap a new spot</button></div></div>' +
+      '<div class="btns"><button class="ghost" data-act="dcenter">' + (decv(d, 'around') ? 'Center it halfway up' : 'Center it on this face') + '</button></div>';
     h += '<div class="field"><span class="lbl">Nudge 1 mm</span><div class="seg" style="grid-template-columns:repeat(4,minmax(0,1fr))"><button data-act="dn-l" aria-label="Nudge left">←</button><button data-act="dn-u" aria-label="Nudge up">↑</button><button data-act="dn-d" aria-label="Nudge down">↓</button><button data-act="dn-r" aria-label="Nudge right">→</button></div>' +
       '<p class="note">In 3D: drag the inlay to slide it, the yellow cube to resize it, and the orange ring to turn it.</p></div>';
     h += seg('dec.mode', 'Finish', [['flush', 'Flush'], ['raised', 'Raised'], ['sunken', 'Sunken']]);
@@ -5713,6 +5771,9 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       case 'conn-swap': if (s && s.kind === 'conn') { snapshot(); var t0 = s.a; s.a = s.b; s.b = t0; var cg2 = connGeom(s); if (cg2.move) moveObj(shapeById(s.b), cg2.move); changed(true); } break;
       case 'dn-l': case 'dn-r': case 'dn-u': case 'dn-d': if (s && s.kind === 'decal') nudgeDecal(s, a.slice(3)); break;
       case 'add-decal': if (s && s.kind !== 'decal') startPlacing(s.id, null); break;
+      case 'dcenter': if (s && s.kind === 'decal') centerDecal(s); break;
+      case 'ctr-mid': centerOnBiggest(false); break;
+      case 'ctr-top': centerOnBiggest(true); break;
       case 'dplace': if (s && s.kind === 'decal') startPlacing(s.target, s.id); break;
       case 'place-cancel': S.placing = null; renderPanel(); break;
       case 'drotL': case 'drotR': if (s && s.kind === 'decal') { snapshot(); s.rot = ((s.rot || 0) + (a === 'drotL' ? 15 : 345)) % 360; changed(true); } break;
@@ -6030,6 +6091,30 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     }).catch(function () { });
   })();
   window.addEventListener('resize', function () { size2d(); render2d(); if (viewer.ok) viewer.draw(); });
+  /* ---------------- resizable / hideable side panel ---------------- */
+  (function () {
+    var panel = $('#panel'), grip = $('#grip'), btn = $('#gripBtn'), PW = 340, hidden = false;
+    try { PW = +localStorage.getItem('printsketch-panelw') || 340; hidden = localStorage.getItem('printsketch-panelhide') === '1'; } catch (e) { }
+    function relayout() { size2d(); render2d(); if (viewer.ok) viewer.draw(); }
+    function apply() {
+      var maxW = Math.max(260, Math.min(720, window.innerWidth - 480));
+      PW = Math.max(260, Math.min(maxW, PW));
+      panel.style.width = PW + 'px'; panel.classList.toggle('hide', hidden);
+      btn.textContent = hidden ? '\u2039' : '\u203A'; btn.setAttribute('aria-label', hidden ? 'Show the panel' : 'Hide the panel');
+      grip.style.cursor = hidden ? 'default' : 'col-resize'; grip.classList.toggle('closed', hidden);
+    }
+    function save() { try { localStorage.setItem('printsketch-panelw', PW); localStorage.setItem('printsketch-panelhide', hidden ? '1' : '0'); } catch (e) { } }
+    apply();
+    btn.addEventListener('click', function (e) { e.stopPropagation(); hidden = !hidden; apply(); save(); relayout(); });
+    btn.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+    var drag = null;
+    grip.addEventListener('pointerdown', function (e) { if (hidden) return; drag = { x: e.clientX, w: PW }; grip.setPointerCapture(e.pointerId); grip.classList.add('drag'); e.preventDefault(); });
+    grip.addEventListener('pointermove', function (e) { if (!drag) return; PW = drag.w + (drag.x - e.clientX); apply(); relayout(); });
+    function end() { if (!drag) return; drag = null; grip.classList.remove('drag'); save(); }
+    grip.addEventListener('pointerup', end); grip.addEventListener('pointercancel', end);
+    grip.addEventListener('dblclick', function () { if (hidden) return; PW = 340; apply(); save(); relayout(); });
+    window.addEventListener('resize', apply);
+  })();
   renderPanel();
   requestAnimationFrame(function () { size2d(); if (GS().length) fit2d(G.bbox(GS().map(outline))); render2d(); });
   if (!viewer.ok) toast('3D preview is not available on this device. Drawing and saving still work.', 6000);

@@ -1,6 +1,6 @@
 # PrintSketch user guide
 
-**Version 1.17.** Tap **?** in the app to see which version you have.
+**Version 1.18.** Tap **?** in the app to see which version you have.
 
 ## Installing PrintSketch
 
@@ -35,10 +35,10 @@ The screen has four areas: the top bar, the toolbar on the left, the view in the
 
 | Area | What's there |
 | --- | --- |
-| Top bar | **Draw** and **Inlay** tabs, **Project** (save, open, new) and **?** (quick help) |
+| Top bar | **Plate** and **Object** pickers, the **2D / 3D** switch, **Draw** and **Inlay** tabs, then the trash can, **Project** (save, open, new) and **?** (quick help) |
 | Toolbar (left) | Pen, Lines, Rect, Circle, Select, Text, Photo, Import, Multi, then Fit and Undo at the bottom |
-| View (middle) | The build plate. **2D / 3D** switch at top right; **Plate** and **Object** pickers at top left |
-| Panel (right) | Settings for whatever is selected, or tips when nothing is. Sections fold: tap a header to open it; the one you opened stays open as you switch objects |
+| View (middle) | The build plate. In 3D, the **Top**, **Front**, **Side** and **Bottom** camera buttons are at top right |
+| Panel (right) | Settings for whatever is selected, or tips when nothing is. Sections fold: tap a header to open it; the one you opened stays open as you switch objects. Drag the thin bar on its left edge to make it wider or narrower (double-click the bar to reset), or tap **›** at the top of the bar to hide it and give the view the full width (**‹** brings it back) |
 
 **Moving around the view**
 
@@ -77,9 +77,8 @@ Type exact numbers in the panel, or drag handles in the view; both stay in step.
 
 **Exact numbers (panel)**
 
-- **Size:** X (width), Y (depth) and Z (height) in mm. Turn off **Keep proportions** to stretch one direction only. With it on, changing any one size (including the height) scales the other two to match. Tilt: pick an angle in Tilt by, then tap Left side up, Right side up, Front up or Back up. The shape tilts around its own middle; a drawn shape becomes a solid model the first time you tilt it. Flat bottom: set Raised off the plate below 0 (or drag the blue arrow down) and whatever is under the plate is cut off flat.
-- **Raised off the plate:** lifts the object, for tabs or parts that sit on top of others.
-- **Position:** the X and Y of the object's center. Give two objects the same center to line them up.
+- **Size:** X (width), Y (depth) and Z (height) in mm. Turn off **Keep proportions** to stretch one direction only. With it on, changing any one size (including the height) scales the other two to match. Tilt: pick an angle in Tilt by, then tap Left side up, Right side up, Front up or Back up. The shape tilts around its own middle; a drawn shape becomes a solid model the first time you tilt it.
+- **Position:** the X and Y of the object's center, and **Raised off the plate**, which lifts the object (for tabs or parts that sit on top of others). Flat bottom: set Raised off the plate below 0 (or drag the blue arrow down) and whatever is under the plate is cut off flat.
 - **Turn and tilt:** 15° turns, Mirror, Tilt and Tip it over, all in one section.
 
 **Handles in 2D**
@@ -103,6 +102,8 @@ The exact value shows at the bottom of the view while you drag. The arrows start
 ## Lining up, repeating and measuring
 
 **Snapping.** While you drag an object (in 2D, or with the 3D arrows), it snaps to the edges and centers of other objects and to the plate center. A pink dashed line shows what it lined up with. Turn it off with **Snap to other objects while moving** in the panel when nothing is selected.
+
+**Center on each other.** Select two or more objects (Shift or **Multi**). Under **Center on each other**, **Center them** moves the others to the center of the biggest one, which stays put; **Center on top** also sets them on its top surface (a knob centered on a lid). Groups move as one. Centered parts overlap, and overlapping parts of the same color join, so give them different colors if they should stay separate.
 
 **Line up and spread out.** Select several objects (Shift or **Multi**). Under **Line up**, tap **Left**, **Center**, **Right**, **Top**, **Middle** or **Bottom**. With three or more, **Spread out evenly** makes the gaps between them equal. Groups move as one.
 
@@ -265,6 +266,7 @@ There are two ways to add an inlay. Use **Surface inlay** for most things; use t
 - Drag the **yellow cube** to resize it, or type **Inlay width**.
 - Drag the **orange ring** to turn it, or use the 15° buttons.
 - **Nudge 1 mm** arrows make fine moves. **Tap a new spot** moves it to another face.
+- **Center it on this face** moves it to the middle of the face it's on (on a round part, the middle as seen from that side). For a pattern that goes all the way around, the button is **Center it halfway up**; on a jar it stays below the threads.
 - To get back to an inlay later, pick it from the **Object** list.
 
 **Inlay tab (flat sign or tag)**
@@ -359,7 +361,7 @@ To change or remove a connection later, pick it from the **Object** list. **Remo
 
 Extra plates are workspaces for building parts before you need them.
 
-1. Open the **Plate** list at the top left of the view and choose **＋ Add a plate**.
+1. Open the **Plate** list in the top bar and choose **＋ Add a plate**.
 2. Switch plates with the same list. The number beside each name is how many objects are on it.
 3. To bring a part over, select it and use **Move to plate…** in the panel (or **Move all to plate…** for a selection).
 4. **Rename or delete this plate…** is at the bottom of the list. Deleting a plate deletes everything on it.
