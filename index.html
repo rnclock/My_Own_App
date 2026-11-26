@@ -2727,7 +2727,11 @@ Viewer.prototype.setBed = function (size) {
 function hexToRgb(h) { h = h.replace('#', ''); return [parseInt(h.substr(0, 2), 16) / 255, parseInt(h.substr(2, 2), 16) / 255, parseInt(h.substr(4, 2), 16) / 255]; }
 /* items: [{mesh, color:'#hex', xf: optional fn(x,y,z)->[x,y,z]}]; offset: [dx,dy] to place on bed */
 /* GPU buffers are kept per mesh, so a mesh that didn't change isn't sent to the graphics card again */
-function meshSig(m, off) { var v = m.v, n = v.length; return n + ':' + m.f.length + ':' + v[0] + ':' + v[n >> 1] + ':' + v[n - 1] + ':' + off[0] + ':' + off[1]; }
+function meshSig(m, off) { // whole points (x, y and z) from the start, middle and end, so a move in any direction is seen
+  var v = m.v, n = v.length, mid = Math.floor(n / 6) * 3, s = n + ':' + m.f.length + ':' + off[0] + ':' + off[1];
+  [0, mid, n - 3].forEach(function (i) { s += ':' + v[i] + ',' + v[i + 1] + ',' + v[i + 2]; });
+  return s;
+}
 Viewer.prototype._cached = function (cache, m, build) {
   var key = m.f, sig = meshSig(m, this.off), c = cache.get(key);
   if (c && c.sig === sig) { c.used = this._gen; return c; }
@@ -2983,7 +2987,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.21.1';
+  var VERSION = '1.21.2';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
@@ -3970,7 +3974,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   }
   var gmCache = new Map();
   function groupMesh(gr) {
-    var key = S.filaments.length + '/' + gr.mem.concat(gr.cuts).map(function (s) { return [s.edgeT, s.edgeTs, s.edgeB, s.edgeBs, s.M, s.head, s.nut, s.id, s.fil, S.shapes.indexOf(s), s.kind, s.role, s.z, s.h, s.through, s.smooth, s.raw.length, s.raw[0], s.raw[s.raw.length >> 1], s.mesh ? s.mesh.v.length + ':' + s.mesh.v[0] + ':' + s.mesh.v[s.mesh.v.length - 1] : ''].join('|'); }).join('#');
+    var key = S.filaments.length + '/' + gr.mem.concat(gr.cuts).map(function (s) { return [s.edgeT, s.edgeTs, s.edgeB, s.edgeBs, s.M, s.head, s.nut, s.id, s.fil, S.shapes.indexOf(s), s.kind, s.role, s.z, s.h, s.through, s.smooth, s.raw.length, s.raw[0], s.raw[s.raw.length >> 1], s.mesh ? s.mesh.v.length + ':' + s.mesh.v.slice(0, 3).join(',') + ':' + s.mesh.v.slice(-3).join(',') : ''].join('|'); }).join('#');
     key += '@' + gr.mem.map(function (m) { return JSON.stringify(decalsOn(m.id).map(function (d) { return [d.id, d.src, d.text, d.font, d.regs ? d.regs.length : 0, d.F, d.w, d.rot, d.mode, d.layers, d.fil, d.wrap, d.pat, d.ph, d.cell, d.line, d.around]; })); }).join(',');
     key += '&' + JSON.stringify(S.shapes.filter(function (c) { return c.kind === 'conn' && gr.mem.some(function (m) { return m.id === c.a || m.id === c.b; }); }).map(cleanShape));
     if (gmCache.has(key)) { var hit = gmCache.get(key); (hit.decalMeshes || []).forEach(function (dm) { var d = shapeById(dm.id); if (d) d._mesh = dm.mesh; }); return hit; }
@@ -4652,8 +4656,8 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   /* an inlay's result is kept: changing another part of the object doesn't stamp it again */
   var decCache = new Map();
   function meshKey(m) {
-    var v = m.v, f = m.f, n = v.length, h = n + ':' + f.length, st = Math.max(1, Math.floor(n / 64));
-    for (var i = 0; i < n; i += st) h += ':' + Math.round(v[i] * 1e4);
+    var v = m.v, f = m.f, n = v.length, h = n + ':' + f.length, st = Math.max(3, Math.floor(n / 192) * 3);
+    for (var i = 0; i + 2 < n; i += st) h += ':' + Math.round(v[i] * 1e4) + ',' + Math.round(v[i + 1] * 1e4) + ',' + Math.round(v[i + 2] * 1e4);
     return h + ':' + v[n - 1] + ':' + (m.fc ? m.fc.length : 0);
   }
   function pruneCaches() {
@@ -6642,7 +6646,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   renderPanel();
   requestAnimationFrame(function () { size2d(); if (GS().length) fit2d(G.bbox(GS().map(outline))); render2d(); });
   if (!viewer.ok) toast('3D preview is not available on this device. Drawing and saving still work.', 6000);
-  window.__toS = toS; window.__inlayRegs = function () { return inlayRegions(); }; window.__viewer = viewer; window.__ps = { S: S, G: G, render2d: render2d, update3d: update3d, inlayMeshes: inlayMeshes, buildHinge: buildHinge, drawPartMesh: drawPartMesh, drawParts: drawParts, addShape: addShape, changed: changed, partGroups: function () { return partGroups(); }, cutList: function (g) { return cutList(g); }, shapesJson: function () { return shapesJson(); }, writeStore: function () { writeStore(); } };
+  window.__toS = toS; window.__inlayRegs = function () { return inlayRegions(); }; window.__viewer = viewer; window.__ps = { S: S, G: G, render2d: render2d, update3d: update3d, inlayMeshes: inlayMeshes, buildHinge: buildHinge, drawPartMesh: drawPartMesh, drawParts: drawParts, addShape: addShape, changed: changed, partGroups: function () { return partGroups(); }, cutList: function (g) { return cutList(g); }, shapesJson: function () { return shapesJson(); }, writeStore: function () { writeStore(); }, draw3dFast: function () { draw3d(true, true); }, mapShape: function (s, f) { mapShape(s, f); } };
 })();
 
 </script>
