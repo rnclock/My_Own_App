@@ -2983,7 +2983,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.20';
+  var VERSION = '1.21';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
@@ -4125,6 +4125,15 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     h += '<div class="btns"><button class="ghost" data-act="cut-cancel">Cancel</button><button class="primary" data-act="cut-apply">Cut it</button></div>';
     return h;
   }
+  /* after a cut, each inlay goes with the piece it sits on */
+  function decalInside(d, target) {
+    if (!d.F) return false; var o = d.F.o, ol = outline(target), b = shapeBox(target), m = 0.6;
+    if (o[2] < (target.z || 0) - m || o[2] > objTop(target) + m) return false;
+    if (G.pointInPoly(o[0], o[1], ol)) return true;
+    return o[0] >= b.minX - m && o[0] <= b.maxX + m && o[1] >= b.minY - m && o[1] <= b.maxY + m && ol.some(function (p, i) { var q = ol[(i + 1) % ol.length], ex = q[0] - p[0], ey = q[1] - p[1], L2 = ex * ex + ey * ey || 1, tt = Math.max(0, Math.min(1, ((o[0] - p[0]) * ex + (o[1] - p[1]) * ey) / L2)); return Math.hypot(p[0] + ex * tt - o[0], p[1] + ey * tt - o[1]) < m; });
+  }
+  function claimDecals(decs, target) { decs.forEach(function (d) { if (!d._claimed && decalInside(d, target)) { d.target = target.id; d._claimed = true; } }); }
+  function dropUnclaimed(decs) { var gone = decs.filter(function (d) { return !d._claimed; }); decs.forEach(function (d) { delete d._claimed; }); if (gone.length) S.shapes = S.shapes.filter(function (x) { return gone.indexOf(x) < 0; }); }
   function copyShape(s, extra) { var o = cleanShape(s); delete o.name; o.id = S.nextId++; return Object.assign(o, extra || {}); }
   function applyCut() {
     var C = S.cut, s = shapeById(C.id); if (!s) { S.cut = null; renderPanel(); return; }
@@ -4154,7 +4163,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       });
     }
     if (!pieces.length) { undoStack.pop(); return toast('Nothing left on that side.'); }
-    var base = (s.name || shapeLabel(s).split(' · ')[0]).replace(/ \(\d+\)$/, '');
+    var base = (s.name || shapeLabel(s).split(' · ')[0]).replace(/ \(\d+\)$/, ''), decs = decalsOn(s.id);
     pieces.forEach(function (pc, i) {
       var target = i === 0 ? s : copyShape(s);
       Object.assign(target, pc.props);
@@ -4165,14 +4174,16 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       touch(target);
       if (target.kind === 'mesh') refreshSilhouette(target);
       if (i > 0) addObj(target);
+      claimDecals(decs, target);
       if (C.keep === 'both' && pc.side === 'more') {
         var bb = shapeBox(target), dx = C.axis === 'y' ? 0 : (C.axis === 'z' ? bb.w + 10 : 5), dy = C.axis === 'y' ? 5 : 0;
         mapShape(target, function (x, y) { return [x + dx, y + dy]; });
       }
       if (C.axis === 'z' && pc.side === 'more') { // set it down on the plate
-        if (target.kind === 'mesh') { var lift = target.z; setMeshZ(target, function (z) { return z - lift; }); } else target.z = 0;
+        if (target.kind === 'mesh') { var lift = target.z; setMeshZ(target, function (z) { return z - lift; }); } else shiftZ(target, -(target.z || 0));
       }
     });
+    dropUnclaimed(decs);
     S.cut = null; S.sel = s.id;
     changed(true);
     toast(pieces.length > 1 ? 'Cut into ' + pieces.length + ' pieces.' : 'Cut done.');
@@ -4204,13 +4215,18 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     });
     if (!pieces.length) { undoStack.pop(); return toast('Nothing left on that side.'); }
     if (C.lim && pieces.length === 2 && pieces[1].mesh.f.length && Math.abs(G.signedVolume(pieces[1].mesh)) < 0.01) { undoStack.pop(); return toast('The block doesn\u2019t reach the object. Move it or make it bigger.'); }
-    var base = (s.name || shapeLabel(s).split(' · ')[0]).replace(/ \(\d+\)$/, '');
+    var base = (s.name || shapeLabel(s).split(' · ')[0]).replace(/ \(\d+\)$/, ''), decs = decalsOn(s.id), bb0 = shapeBox(s);
     pieces.forEach(function (pc, i) {
-      var target = i === 0 ? s : copyShape(s), m = pc.mesh;
+      var target = i === 0 ? s : copyShape(s), m = pc.mesh, layFlat = null;
+      // which inlays are on this piece (before it is moved)
+      var probe = { id: target.id, kind: 'mesh', mesh: { v: m.v, f: m.f } }; probe.raw = (G.silhouette(m)[0] || { outer: G.rectPts(0, 0, 1, 1) }).outer; var pb = m.bounds(); probe.z = pb[2]; probe.h = pb[5] - pb[2];
+      decs.forEach(function (d) { if (!d._claimed && decalInside(d, probe)) { d.target = target.id; d._claimed = true; d._mine = target.id; } });
       if (C.keep === 'both' && pc.side === 'more' && C.axis === 'z') { // lay it cut face down
-        var bb0 = shapeBox(s), loc = G.toFrame(m, F), lbb = loc.bounds();
+        var loc = G.toFrame(m, F), lbb = loc.bounds();
+        layFlat = function (p) { var w = [p[0] - F.o[0], p[1] - F.o[1], p[2] - F.o[2]]; return [w[0] * F.r[0] + w[1] * F.r[1] + w[2] * F.r[2] + bb0.cx, w[0] * F.u[0] + w[1] * F.u[1] + w[2] * F.u[2] + bb0.cy, w[0] * F.n[0] + w[1] * F.n[1] + w[2] * F.n[2] - lbb[2]]; };
         m = loc.transform(function (a, b, c) { return [a + bb0.cx, b + bb0.cy, c - lbb[2]]; });
       }
+      if (layFlat) decs.forEach(function (d) { if (d._mine !== target.id || !d.F) return; var rv = function (v) { return [v[0] * F.r[0] + v[1] * F.r[1] + v[2] * F.r[2], v[0] * F.u[0] + v[1] * F.u[1] + v[2] * F.u[2], v[0] * F.n[0] + v[1] * F.n[1] + v[2] * F.n[2]]; }; d.F = { o: layFlat(d.F.o), r: rv(d.F.r), u: rv(d.F.u), n: rv(d.F.n) }; });
       target.mesh = { v: m.v.map(function (x) { return Math.round(x * 1e4) / 1e4; }), f: m.f, fc: m.fc }; target.pieces = m.pieces;
       if (pieces.length > 1) { var k = 1; while (S.shapes.some(function (x) { return x !== target && x.name === base + ' (' + k + ')'; })) k++; target.name = base + ' (' + k + ')'; }
       touch(target); refreshSilhouette(target);
@@ -4221,6 +4237,8 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       }
       if (target.z < -1e-4 || C.keep !== 'both') { var lift = target.z; if (lift < 0) setMeshZ(target, function (z) { return z - lift; }); }
     });
+    decs.forEach(function (d) { delete d._mine; });
+    dropUnclaimed(decs);
     S.cut = null; S.sel = s.id;
     changed(true);
     toast(pieces.length > 1 ? 'Cut into ' + pieces.length + ' pieces.' : 'Cut done.');
@@ -4417,6 +4435,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       });
     });
     conns.forEach(function (c) { if (c.type === 'hinge' && c.style === 'pin' && c.apart) layApart(c, objs); });
+    conns.forEach(function (c) { if (c.type !== 'hinge' && c.apart) setApart(c, objs); });
     var by = {}, list = [];
     Object.keys(objs).forEach(function (id) {
       var o = objs[id];
@@ -4426,6 +4445,20 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     var out = Object.keys(by).map(Number).sort().map(function (f) { return { fil: f, mesh: by[f] }; });
     out.decalMeshes = dm; out.objs = list;
     return out;
+  }
+  /* dovetail, pegs, magnets: shape the joint with the pieces together, then put the second piece beside the first for printing */
+  function setApart(c, objs) {
+    var A = objs[c.a], B = objs[c.b]; if (!A || !B) return;
+    var bnd = function (o) { var m = new G.Mesh(); m.append(o.mesh); o.extra.forEach(function (e) { m.append(e.mesh); }); return m.bounds(); };
+    var a = bnd(A), b = bnd(B), dx = 0, dy = 0, dz = 0, gap = 6;
+    if (b[2] >= a[5] - 0.5) { dx = a[3] + gap - b[0]; dz = -b[2]; } // stacked: set it down beside
+    else {
+      var cx = (b[0] + b[3]) / 2 - (a[0] + a[3]) / 2, cy = (b[1] + b[4]) / 2 - (a[1] + a[4]) / 2;
+      if (Math.abs(cx) >= Math.abs(cy)) dx = cx >= 0 ? a[3] + gap - b[0] : a[0] - gap - b[3];
+      else dy = cy >= 0 ? a[4] + gap - b[1] : a[1] - gap - b[4];
+    }
+    var mv = function (m) { return m.clone().transform(function (x, y, z) { return [x + dx, y + dy, z + dz]; }); };
+    B.mesh = mv(B.mesh); B.extra.forEach(function (e) { e.mesh = mv(e.mesh); });
   }
   /* pinned hinge: lay the lid (the raised object) flat beside the box so the two print separately */
   function layApart(c, objs) {
@@ -5866,6 +5899,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       h += slider('cn.clr', 'Extra room for an easy fit', 0.05, 0.5, 0.05, function (v) { return fmt(v, 2) + ' mm'; });
       h += '<p class="note">' + (c.type === 'pegs' ? (getPath('cn.where') === 'side' ? 'For a flat piece (like a name) that stands against a side of the other object. ' + (getPath('cn.face') !== 'auto' ? 'Lay it flat anywhere, reading the right way from the front of the plate.' : 'Lay it flat in front of that side, reading the right way, with its top toward the object.') + ' Raise or slide it on the side with the settings above. Holes go up into its back and sideways into the side' + (g.pins ? ' (' + g.pins + ' pin' + (g.pins > 1 ? 's' : '') + ', ' + fmt(g.pinLen) + ' mm long' + ((g.pinDia || getPath('cn.dia')) > 2.2 ? ', printed beside the piece' : ': use 1.75 mm filament') + (g.note ? '; ' + g.note.charAt(0).toLowerCase() + g.note.slice(1).replace(/\.$/, '') : '') + ')' : '') + '. Glue it on with the pins in.' : 'Pegs stand on top of the first object. The second object gets matching holes underneath, so it sits on top lined up.') : 'Pockets go into the top of the first object and the bottom of the second. Glue the magnets in, checking which way they pull.') + '</p>';
     }
+    if (c.type !== 'hinge') h += toggle('cn.apart', 'Print the pieces apart') + '<p class="note">' + (getPath('cn.apart') ? 'The joint is shaped with the pieces together, then the second piece is shown and saved 6 mm away, ready to print separately. Turn this off to see them joined.' : 'Keeps the joint, but lays the pieces out apart so you can print them separately.') + '</p>';
     h += btns;
     if (!S.view3d) h += '<div class="btns"><button class="ghost" data-act="view3d">See in 3D</button></div>';
     h += saveButtons('Save these parts');

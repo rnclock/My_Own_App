@@ -1,6 +1,6 @@
 # PrintSketch user guide
 
-**Version 1.20.** Tap **?** in the app to see which version you have.
+**Version 1.21.** Tap **?** in the app to see which version you have.
 
 ## Installing PrintSketch
 
@@ -151,7 +151,7 @@ Each shape keeps its own height, so a hole never changes the part it cuts into. 
 3. Drag the slider or type the position.
 4. Under **Keep**, choose **Both pieces** or just one side, then tap **Cut it**.
 
-With both pieces kept, each becomes its own object, moved apart a little; a flat cut sets the top piece down on the plate. That's the easy way to split a tall model into a body and a lid.
+With both pieces kept, each becomes its own object, moved apart a little; a flat cut sets the top piece down on the plate. That's the easy way to split a tall model into a body and a lid. Inlays go with the piece they sit on, and inlays on a piece you don't keep are removed.
 
 **Angled cuts.** Under **Angle**, tilt the cut up to 60° either way. For **Flat across** that's **Tilt left / right** and **Tilt front / back**; for the upright directions it's **Turn (seen from above)** (a diagonal cut) and **Lean**. The blue plane follows as you change it. With both pieces kept, the top piece of a tilted flat cut is laid with its cut face down on the plate, ready to print without supports.
 
@@ -353,6 +353,8 @@ Keep lines at least 0.8 mm wide. Patterns wrap around curved faces like text doe
 **Pegs on a side.** To fix a flat piece, like a name, onto the side of a box, connect them with **Alignment pegs** and set **Where** to **On a side** (it starts there when the two sit side by side). **Which side** is **Facing it** (the side the piece lies in front of) or **Front**, **Back**, **Left** or **Right**; then **Raise or lower on the side** and **Slide along the side** fine-tune the spot. Lay the piece flat, reading left to right, with its top toward the back. Holes go up into the piece's back and sideways into the side; pins shrink to fit narrow letters, down to 2 mm (use 1.75 mm filament as the pins), and bigger pins print beside the piece. Push the pins in, add glue, and press it on.
 
 **Dovetails** only form where both pieces have material. On a hollow box that means the floor and walls; use **Slide along the edge** to move it over a solid spot.
+
+**Printing connected pieces apart.** Dovetails, alignment pegs and magnet pockets have **Print the pieces apart**. The joint is shaped with the pieces together, then the second piece is shown and saved 6 mm away, ready to print separately (handy for a sign cut in two to fit the plate). Turn it off to see them joined again. Moving the pieces apart by hand instead removes the joint, since it only forms where they meet.
 
 To change or remove a connection later, pick it from the **Object** list. **Remove connection** deletes it.
 

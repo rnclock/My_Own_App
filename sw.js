@@ -1,5 +1,5 @@
 /* PrintSketch service worker: lets the app open and work with no internet. */
-var VERSION = 'fd434c87f2';
+var VERSION = '55c1e0b704';
 var APP = 'printsketch-app-' + VERSION;
 var FONTS = 'printsketch-fonts-v1';
 var CORE = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
