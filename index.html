@@ -2983,7 +2983,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.21';
+  var VERSION = '1.21.1';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
@@ -4791,9 +4791,9 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       decalGizmo(ds, po, pw, pr).forEach(function (gi) { items.push({ mesh: gi.mesh, color: gi.color, overlay: true }); picks.push({ mesh: gi.mesh, id: gi.id, top: true }); });
     }
     measure3Items().forEach(function (it) { items.push(it); });
-    var gt = measure3On() ? null : gzTarget();
-    if (gt && viewer.size) gizmoItems(gt).forEach(function (gi) { items.push({ mesh: gi.mesh, color: gi.color, overlay: true, alpha: gi.alpha }); picks.push({ mesh: gi.pick, id: gi.id, top: true }); });
     if (!keepCam || !viewer.size) viewer.centerOn(all.length ? all : [new G.Mesh()]);
+    var gt = measure3On() ? null : gzTarget(); // after centerOn, so the handles are there from the first picture
+    if (gt && viewer.size) gizmoItems(gt).forEach(function (gi) { items.push({ mesh: gi.mesh, color: gi.color, overlay: true, alpha: gi.alpha }); picks.push({ mesh: gi.pick, id: gi.id, top: true }); });
     viewer.setItems(items, keepCam);
     viewer.setPickItems(picks);
   }
