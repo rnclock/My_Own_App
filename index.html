@@ -104,7 +104,7 @@ input[type=range]{width:100%;accent-color:#F5A04A;height:28px}
 select,.txt{width:100%;min-height:46px;border-radius:10px;border:1px solid #3A404B;background:#252A33;padding:0 12px;font-size:15px}
 .color{display:flex;align-items:center;gap:8px;min-height:44px;font-size:14px}
 .color input{width:44px;height:36px;border:0;background:none;padding:0}
-textarea.txt{width:100%;resize:vertical;min-height:84px;font:inherit;line-height:1.4;padding:10px 12px}
+textarea.txt{width:100%;resize:vertical;min-height:84px;font:inherit;line-height:1.4;padding:10px 12px;color:inherit}
 .box{background:#20242B;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px}
 .box.sec>h3:first-child{cursor:pointer;display:flex;align-items:center;gap:8px;margin:0;min-height:32px;user-select:none;-webkit-tap-highlight-color:transparent}
 .box.sec>h3:first-child::after{content:'';margin-left:auto;width:9px;height:9px;border-right:2px solid #9AA0AA;border-bottom:2px solid #9AA0AA;transform:rotate(45deg);transition:transform .15s;flex:none}
@@ -2981,13 +2981,13 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   /* ---------------- state ---------------- */
   var S = {
     tiltStep: 15, handles: 'normal', seam: { w: 1, d: 1, top: true }, hollowSep: false, knitTex: { type: 'knit', cell: 5, depth: 0.8 },
-    plates: [{ id: 1, name: 'Main plate' }], plate: 1, multi: [], multiMode: false, groupNames: {}, tab: 'draw', view3d: false, tool: 'pen', fingerDraw: false, T: 4, lock: true, wall: 2, floorT: 2, openLine: false, lineW: 1.2, stand: { t: 5, taper: 100 }, loft: { hollow: false, wall: 2, floor: 2, dir: 'up' }, lastSave: {}, sphere: { d: 40, hollow: false, wall: 2, flat: 1 }, snap: true, rep: { mode: 'row', n: 4, dx: 15, dy: 15, cols: 3, rows: 2, ang: 360 }, spinAxis: 'left', jar: { d: 50, H: 60, wall: 2.4, pitch: 3, clr: 0.4 }, screw: { M: 3, head: 'csk', nut: false }, lid: { T: 2, lipH: 4, clr: 0.2, click: false }, fil: 1,
+    plates: [{ id: 1, name: 'Main plate' }], plate: 1, multi: [], multiMode: false, groupNames: {}, tab: 'draw', view3d: false, tool: 'pen', fingerDraw: false, T: 4, lock: true, wall: 2, floorT: 2, openLine: false, lineW: 1.2, stand: { t: 5, taper: 100 }, loft: { hollow: false, wall: 2, floor: 2, dir: 'up' }, lastSave: {}, sphere: { d: 40, hollow: false, wall: 2, flat: 1 }, snap: true, rep: { mode: 'row', n: 4, dx: 15, dy: 15, cols: 3, rows: 2, ang: 360 }, spinAxis: 'left', jar: { d: 50, H: 60, wall: 2.4, pitch: 3, clr: 0.4 }, screw: { M: 3, head: 'csk', nut: false, dir: 'down' }, lid: { T: 2, lipH: 4, clr: 0.2, click: false }, fil: 1,
     filaments: ['#F5A04A', '#EDEDED', '#2B2B2B', '#3B7DD8'],
     shapes: [], sel: null, nextId: 1,
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.22';
+  var VERSION = '1.23';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
@@ -3974,7 +3974,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   }
   var gmCache = new Map();
   function groupMesh(gr) {
-    var key = S.filaments.length + '/' + gr.mem.concat(gr.cuts).map(function (s) { return [s.edgeT, s.edgeTs, s.edgeB, s.edgeBs, s.M, s.head, s.nut, s.id, s.fil, S.shapes.indexOf(s), s.kind, s.role, s.z, s.h, s.through, s.smooth, s.raw.length, s.raw[0], s.raw[s.raw.length >> 1], s.mesh ? s.mesh.v.length + ':' + s.mesh.v.slice(0, 3).join(',') + ':' + s.mesh.v.slice(-3).join(',') : ''].join('|'); }).join('#');
+    var key = S.filaments.length + '/' + gr.mem.concat(gr.cuts).map(function (s) { return [s.edgeT, s.edgeTs, s.edgeB, s.edgeBs, s.flareT, s.flareTs, s.flareB, s.flareBs, s.dir, s.M, s.head, s.nut, s.id, s.fil, S.shapes.indexOf(s), s.kind, s.role, s.z, s.h, s.through, s.smooth, s.raw.length, s.raw[0], s.raw[s.raw.length >> 1], s.mesh ? s.mesh.v.length + ':' + s.mesh.v.slice(0, 3).join(',') + ':' + s.mesh.v.slice(-3).join(',') : ''].join('|'); }).join('#');
     key += '@' + gr.mem.map(function (m) { return JSON.stringify(decalsOn(m.id).map(function (d) { return [d.id, d.src, d.text, d.font, d.regs ? d.regs.length : 0, d.F, d.w, d.rot, d.mode, d.layers, d.fil, d.wrap, d.pat, d.ph, d.cell, d.line, d.around]; })); }).join(',');
     key += '&' + JSON.stringify(S.shapes.filter(function (c) { return c.kind === 'conn' && gr.mem.some(function (m) { return m.id === c.a || m.id === c.b; }); }).map(cleanShape));
     if (gmCache.has(key)) { var hit = gmCache.get(key); (hit.decalMeshes || []).forEach(function (dm) { var d = shapeById(dm.id); if (d) d._mesh = dm.mesh; }); return hit; }
@@ -3987,33 +3987,184 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   }
   /* metric screw sizes (mm): clearance hole, countersink head, counterbore head + depth, nut across-flats + thickness */
   var SCREWS = { 2: [2.4, 4.4, 4.2, 2.2, 4.3, 1.8], 2.5: [2.9, 5.2, 5, 2.7, 5.3, 2.2], 3: [3.4, 6.6, 6.2, 3.2, 5.8, 2.6], 4: [4.5, 8.8, 7.8, 4.2, 7.3, 3.4], 5: [5.5, 10.8, 9.2, 5.2, 8.3, 4.2], 6: [6.6, 13, 11.2, 6.2, 10.3, 5.2], 8: [8.6, 17.2, 14.4, 8.2, 13.3, 6.8] };
-  function screwCuts(c) {
-    var T = SCREWS[shp(c, 'M')] || SCREWS[3], b = shapeBox(c), cx = b.cx, cy = b.cy, z0 = c.z || 0, z1 = z0 + Math.max(0.2, c.h || S.T), out = [];
+  var SCREW_SIDE = { front: [0, 1], back: [0, -1], left: [1, 0], right: [-1, 0] }; // which way the hole runs from the face the head is on
+  function screwSide(c) { return SCREW_SIDE[shp(c, 'dir')] ? shp(c, 'dir') : null; }
+  function screwBandR(c) { // how far the hole reaches from its axis (head, nut or plain hole)
+    var T = SCREWS[shp(c, 'M')] || SCREWS[3], hd = shp(c, 'head'), r = T[0] / 2;
+    if (hd === 'csk') r = Math.max(r, T[1] / 2); else if (hd === 'cbore') r = Math.max(r, T[2] / 2);
+    if (shp(c, 'nut')) r = Math.max(r, (T[4] + 0.3) / Math.sqrt(3));
+    return r;
+  }
+  function screwAxis(c) { // side screws: entry point on the face, unit direction inward, length, center height
+    var r = c.raw || [], zc = (c.z || 0) + (c.h || 0) / 2;
+    if (r.length === 4) {
+      var E = [(r[0][0] + r[1][0]) / 2, (r[0][1] + r[1][1]) / 2], F = [(r[2][0] + r[3][0]) / 2, (r[2][1] + r[3][1]) / 2];
+      var dx = F[0] - E[0], dy = F[1] - E[1], D = Math.hypot(dx, dy) || 1, u = [dx / D, dy / D]; // the outline sticks out 0.5 mm past each end
+      return { E: [E[0] + u[0] * 0.5, E[1] + u[1] * 0.5], u: u, L: Math.max(1, D - 1), zc: zc };
+    }
+    var b = shapeBox(c), u = SCREW_SIDE[screwSide(c)] || [0, 1], L = Math.abs(u[0]) ? b.w : b.h;
+    return { E: [b.cx - u[0] * L / 2, b.cy - u[1] * L / 2], u: u, L: L, zc: zc };
+  }
+  function setScrewAxis(c, E, u, L, zc) {
+    var R = screwBandR(c), n = [-u[1], u[0]], F = [E[0] + u[0] * (L + 0.5), E[1] + u[1] * (L + 0.5)];
+    E = [E[0] - u[0] * 0.5, E[1] - u[1] * 0.5];
+    c.raw = [[E[0] - n[0] * R, E[1] - n[1] * R], [E[0] + n[0] * R, E[1] + n[1] * R], [F[0] + n[0] * R, F[1] + n[1] * R], [F[0] - n[0] * R, F[1] - n[1] * R]];
+    c.z = zc - R; c.h = 2 * R; touch(c);
+  }
+  function refreshScrew(c) { // after a size/head/nut change, keep where it is
+    if (screwSide(c)) { var a = screwAxis(c); setScrewAxis(c, a.E, a.u, a.L, a.zc); }
+    else { var b = shapeBox(c); c.raw = G.circlePts(b.cx, b.cy, (SCREWS[shp(c, 'M')] || SCREWS[3])[0] / 2, 48); touch(c); }
+  }
+  function placeScrew(c, t) { // put the screw on the right face of object t (or a 20 mm block if none)
+    var b = t ? shapeBox(t) : (function () { var q = shapeBox(c); return { minX: q.cx - 10, maxX: q.cx + 10, minY: q.cy - 10, maxY: q.cy + 10, cx: q.cx, cy: q.cy, w: 20, h: 20 }; })();
+    var z0 = t ? (t.z || 0) : (screwSide(c) ? (c.z || 0) : (c.z || 0)), z1 = t ? objTop(t) : z0 + Math.max(c.h || 10, 1);
+    var d = screwSide(c), ctr = shapeBox(c), cx = t ? ctr.cx : b.cx, cy = t ? ctr.cy : b.cy;
+    if (t) { cx = Math.max(b.minX, Math.min(b.maxX, cx)); cy = Math.max(b.minY, Math.min(b.maxY, cy)); }
+    if (!d) { c.z = z0; c.h = z1 - z0; c.raw = G.circlePts(cx, cy, (SCREWS[shp(c, 'M')] || SCREWS[3])[0] / 2, 48); touch(c); return; }
+    var u = SCREW_SIDE[d], E = d === 'front' ? [cx, b.minY] : d === 'back' ? [cx, b.maxY] : d === 'left' ? [b.minX, cy] : [b.maxX, cy];
+    setScrewAxis(c, E, u, Math.abs(u[0]) ? b.w : b.h, (z0 + z1) / 2);
+  }
+  function screwTarget(c) { // the solid the screw sits in, if any
+    var b = shapeBox(c), best = null;
+    solidShapes().forEach(function (x) { if (best || (x.plate || 1) !== (c.plate || 1)) return; var q = shapeBox(x); if (b.cx >= q.minX - 0.5 && b.cx <= q.maxX + 0.5 && b.cy >= q.minY - 0.5 && b.cy <= q.maxY + 0.5) best = x; });
+    return best;
+  }
+  function surfaceAt(mem, x, y, top) { // height of the part's top (or bottom) surface right at x,y, or null
+    var best = null, pick = function (z) { if (best === null || (top ? z > best : z < best)) best = z; };
+    (mem || []).forEach(function (m) {
+      if (m.kind === 'mesh') {
+        var mm = meshOf(m), v = mm.v, f = mm.f;
+        for (var i = 0; i < f.length; i += 3) {
+          var a = f[i] * 3, bq = f[i + 1] * 3, cq = f[i + 2] * 3;
+          var x1 = v[a], y1 = v[a + 1], x2 = v[bq], y2 = v[bq + 1], x3 = v[cq], y3 = v[cq + 1];
+          if (x < Math.min(x1, x2, x3) || x > Math.max(x1, x2, x3) || y < Math.min(y1, y2, y3) || y > Math.max(y1, y2, y3)) continue;
+          var d = (y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3); if (Math.abs(d) < 1e-12) continue;
+          var l1 = ((y2 - y3) * (x - x3) + (x3 - x2) * (y - y3)) / d, l2 = ((y3 - y1) * (x - x3) + (x1 - x3) * (y - y3)) / d, l3 = 1 - l1 - l2;
+          if (l1 < -1e-9 || l2 < -1e-9 || l3 < -1e-9) continue;
+          pick(l1 * v[a + 2] + l2 * v[bq + 2] + l3 * v[cq + 2]);
+        }
+      } else if (G.pointInPoly(x, y, outline(m)) && !(m.holes || []).some(function (hh) { return G.pointInPoly(x, y, hh); })) pick(top ? objTop(m) : (m.z || 0));
+    });
+    return best;
+  }
+  function screwCuts(c, mem) {
+    var T = SCREWS[shp(c, 'M')] || SCREWS[3], head = shp(c, 'head'), out = [];
+    if (screwSide(c)) return sideScrewCuts(c, T, head);
+    var b = shapeBox(c), cx = b.cx, cy = b.cy, z0 = c.z || 0, len = Math.max(0.2, c.h || S.T), z1 = z0 + len, up = shp(c, 'dir') === 'up';
+    // the head end sits on the part's real surface, even if the part was made taller or shorter after the screw went in
+    var sf = mem ? surfaceAt(mem, cx, cy, !up) : null;
+    if (sf !== null) {
+      if (up) { z0 = sf; if (z1 < z0 + 1) { var t1 = surfaceAt(mem, cx, cy, true); z1 = t1 !== null && t1 > z0 + 1 ? t1 : z0 + len; } }
+      else { z1 = sf; if (z0 > z1 - 1) { var b1 = surfaceAt(mem, cx, cy, false); z0 = b1 !== null && b1 < z1 - 1 ? b1 : z1 - len; } }
+      len = z1 - z0;
+    }
     var circ = function (d) { return G.circlePts(cx, cy, d / 2, 48); };
-    out.push({ pts: circ(T[0]), z0: z0 - 0.5, z1: z1 + 0.5 });
-    var head = shp(c, 'head');
+    // d0..d1 measured in from the face the head is on
+    var band = function (pts, d0, d1) { out.push(up ? { pts: pts, z0: z0 + d0, z1: z0 + d1 } : { pts: pts, z0: z1 - d1, z1: z1 - d0 }); };
+    band(circ(T[0]), -0.5, len + 0.5);
     if (head === 'csk') {
       var dep = (T[1] - T[0]) / 2, n = Math.max(3, Math.ceil(dep / 0.2));
-      for (var i = 0; i < n; i++) { var ta = i * dep / n, d = T[1] - 2 * (ta + dep / n * 0.5); out.push({ pts: circ(Math.max(T[0], d)), z0: z1 - ta - dep / n, z1: i === 0 ? z1 + 0.5 : z1 - ta }); }
-    } else if (head === 'cbore') out.push({ pts: circ(T[2]), z0: z1 - Math.min(T[3], z1 - z0 - 0.6), z1: z1 + 0.5 });
+      for (var i = 0; i < n; i++) { var ta = i * dep / n, d = T[1] - 2 * (ta + dep / n * 0.5); band(circ(Math.max(T[0], d)), i === 0 ? -0.5 : ta, ta + dep / n); }
+    } else if (head === 'cbore') band(circ(T[2]), -0.5, Math.min(T[3], len - 0.6));
     if (shp(c, 'nut')) {
       var r = (T[4] + 0.3) / Math.sqrt(3), hex = [];
       for (var k = 0; k < 6; k++) hex.push([cx + r * Math.cos(k * Math.PI / 3), cy + r * Math.sin(k * Math.PI / 3)]);
-      out.push({ pts: hex, z0: z0 - 0.5, z1: z0 + Math.min(T[5] + 0.2, z1 - z0 - 0.6) });
+      band(hex, len - Math.min(T[5] + 0.2, len - 0.6), len + 0.5);
+    }
+    return out;
+  }
+  function sideScrewCuts(c, T, head) {
+    // a sideways hole: stacked thin flat slices, each as wide as the hole is at that height
+    var ax = screwAxis(c), E = ax.E, u = ax.u, n = [-u[1], u[0]], L = ax.L, zc = ax.zc, out = [];
+    var dep = (T[1] - T[0]) / 2, cbE = Math.min(T[3], L - 0.6), nutA = L - Math.min(T[5] + 0.2, L - 0.6), Rc = (T[4] + 0.3) / Math.sqrt(3), nut = shp(c, 'nut');
+    var wAt = function (a, t) {
+      var w = 0, r = T[0] / 2, at = Math.abs(t);
+      if (head === 'csk' && a <= dep) r = Math.max(r, T[1] / 2 - Math.max(0, a));
+      if (head === 'cbore' && a <= cbE) r = Math.max(r, T[2] / 2);
+      if (r > at) w = Math.sqrt(r * r - at * at);
+      if (nut && a >= nutA && at < Rc * Math.sqrt(3) / 2) w = Math.max(w, Rc - at / Math.sqrt(3));
+      return w;
+    };
+    var as = [-0.5, L + 0.5], brk = [0];
+    if (head === 'csk') { for (var q = 0; q <= dep + 1e-9; q += Math.min(0.15, dep / 4)) as.push(q); brk.push(dep); }
+    if (head === 'cbore') brk.push(cbE);
+    if (nut) brk.push(nutA);
+    brk.forEach(function (x) { as.push(x - 1e-3, x + 1e-3); });
+    as = as.filter(function (x) { return x >= -0.5 && x <= L + 0.5; }).sort(function (p, q2) { return p - q2; });
+    var R = screwBandR(c), step = 0.3, ns = Math.max(4, Math.ceil(2 * R / step)), dz = 2 * R / ns;
+    var P = function (a, w) { return [E[0] + u[0] * a + n[0] * w, E[1] + u[1] * a + n[1] * w]; };
+    for (var i = 0; i < ns; i++) {
+      var t0 = -R + i * dz, t1 = t0 + dz, tm = t0 < 0 && t1 > 0 ? 0 : Math.min(Math.abs(t0), Math.abs(t1));
+      var run = [];
+      var flush = function () {
+        if (run.length >= 2) { var top = run.map(function (p) { return P(p[0], p[1]); }), bot = run.slice().reverse().map(function (p) { return P(p[0], -p[1]); }); out.push({ pts: top.concat(bot), z0: zc + t0, z1: zc + t1 }); }
+        run = [];
+      };
+      as.forEach(function (a) { var w = wAt(a, tm); if (w > 1e-3) run.push([a, w]); else flush(); });
+      flush();
     }
     return out;
   }
   function addScrew(s) {
     var M = S.screw.M, T = SCREWS[M], b = shapeBox(s);
     snapshot();
-    var sc = { id: S.nextId++, kind: 'screw', raw: G.circlePts(b.cx, b.cy, T[0] / 2, 48), holes: [], smooth: 0, role: 'hole', z: s.z || 0, h: objTop(s) - (s.z || 0), through: false, M: M, head: S.screw.head, nut: S.screw.nut };
+    var sc = { id: S.nextId++, kind: 'screw', raw: G.circlePts(b.cx, b.cy, T[0] / 2, 48), holes: [], smooth: 0, role: 'hole', z: s.z || 0, h: objTop(s) - (s.z || 0), through: false, M: M, head: S.screw.head, nut: S.screw.nut, dir: S.screw.dir || 'down' };
+    if (s.plate) sc.plate = s.plate;
+    placeScrew(sc, s);
     addObj(sc); S.sel = sc.id; changed(true);
-    toast('Screw hole added in the middle. Drag it where you want it.', 4000);
+    toast(screwSide(sc) ? 'Screw hole added in the ' + sc.dir + ' face, half way up. Set its height and length on the right.' : 'Screw hole added in the middle. Drag it where you want it.', 4000);
   }
   function cutList(gr) {
     var extra = [];
-    gr.cuts.forEach(function (c) { if (c.kind === 'screw') extra = extra.concat(screwCuts(c)); });
-    return extra.concat(gr.cuts.filter(function (c) { return c.kind !== 'screw'; }).map(function (c) { var z0 = c.through !== false ? -1000 : (c.z || 0); return { pts: outline(c), z0: z0, z1: c.through !== false ? 1000 : z0 + Math.max(0.2, c.h || S.T) }; }));
+    gr.cuts.forEach(function (c) { if (c.kind === 'screw') extra = extra.concat(screwCuts(c, gr.mem)); });
+    gr.cuts.forEach(function (c) { if (c.kind !== 'screw') extra = extra.concat(holeCuts(c, gr.mem)); });
+    return extra;
+  }
+  function hasFlare(c) { return (c.flareT && c.flareT !== 'none') || (c.flareB && c.flareB !== 'none'); }
+  var flareCache = new Map();
+  function holeCuts(c, mem) { // a plain hole, plus a countersunk or rounded flare where it meets the top or bottom surface
+    if (c.kind === 'mesh') return meshHoleCuts(c);
+    var ring = outline(c), z0 = c.through !== false ? -1000 : (c.z || 0), z1 = c.through !== false ? 1000 : z0 + Math.max(0.2, c.h || S.T);
+    var out = [{ pts: ring, z0: z0, z1: z1 }];
+    if (!hasFlare(c) || c.kind === 'mesh') return out;
+    var b = G.bbox([ring]), probe = G.pointInPoly(b.cx, b.cy, ring) ? [b.cx, b.cy] : ring[0];
+    var ends = [['flareT', 'flareTs', true], ['flareB', 'flareBs', false]];
+    ends.forEach(function (e) {
+      var type = c[e[0]], size = +shp(c, e[1]) || 1.5; if (!type || type === 'none') return;
+      var top = e[2], sf = mem ? surfaceAt(mem, probe[0], probe[1], top) : null;
+      if (sf === null) { if (c.through !== false) return; sf = top ? z1 : z0; }
+      if (c.through === false) sf = top ? Math.min(sf, z1) : Math.max(sf, z0);
+      var n = Math.max(3, Math.min(24, Math.ceil(size / 0.2))), dz = size / n, offs = [];
+      for (var i = 0; i < n; i++) { var d = (i + 0.5) * dz, o = type === 'round' ? size - Math.sqrt(Math.max(0, size * size - (size - d) * (size - d))) : size - d; offs.push(Math.max(0.01, Math.round(o * 100) / 100)); }
+      var rings = flareRings(c, ring, offs);
+      rings.forEach(function (rs, i) {
+        var a = i * dz, bb = (i + 1) * dz; if (i === 0) a = -0.5;
+        rs.forEach(function (r) { out.push(top ? { pts: r, z0: sf - bb, z1: sf - a } : { pts: r, z0: sf + a, z1: sf + bb }); });
+      });
+    });
+    return out;
+  }
+  var meshHoleCache = new Map();
+  function meshHoleCuts(c) { // a 3D-shaped hole (tilted, turned or imported): its cross-section at every 0.2 mm layer
+    var m = meshOf(c), v = m.v, key = c.id + '|' + v.length + '|' + v.slice(0, 3).join(',') + '|' + v.slice(-3).join(',') + '|' + v.slice(v.length >> 1, (v.length >> 1) + 3).join(',');
+    if (meshHoleCache.has(key)) return meshHoleCache.get(key);
+    var bd = m.bounds(), step = 0.2, n = Math.max(1, Math.min(1500, Math.ceil((bd[5] - bd[2]) / step))), dz = (bd[5] - bd[2]) / n, out = [];
+    for (var i = 0; i < n; i++) {
+      var a = bd[2] + i * dz, mid = a + dz / 2 + 1.37e-6;
+      G.sliceMesh(m, mid, null, true).forEach(function (rg) { out.push({ pts: rg.outer, z0: i === 0 ? a - 0.01 : a, z1: i === n - 1 ? a + dz + 0.01 : a + dz }); });
+    }
+    meshHoleCache.set(key, out); if (meshHoleCache.size > 8) meshHoleCache.delete(meshHoleCache.keys().next().value);
+    return out;
+  }
+  function flareRings(c, ring, offs) { // the hole outline grown by each amount
+    var b = G.bbox([ring]);
+    if (c.kind === 'circle' && Math.abs(b.w - b.h) < 0.05 * Math.max(b.w, b.h)) return offs.map(function (o) { return [G.circlePts(b.cx, b.cy, b.w / 2 + o, 64)]; });
+    var key = c.id + '|' + ring.length + '|' + ring[0].join(',') + '|' + ring[ring.length >> 1].join(',') + '|' + offs.join(',');
+    if (flareCache.has(key)) return flareCache.get(key);
+    var m = Math.max.apply(null, offs) + 2, box = G.rectPts(b.minX - m, b.minY - m, b.maxX + m, b.maxY + m);
+    var lv = G.insetLevels({ outer: box, holes: [ring] }, offs), res = lv.map(function (regs) { var hs = []; regs.forEach(function (r) { hs = hs.concat(r.holes || []); }); return hs.length ? hs : [ring]; });
+    flareCache.set(key, res); if (flareCache.size > 12) flareCache.delete(flareCache.keys().next().value);
+    return res;
   }
   /* ---------------- cutting ---------------- */
   function objRange(s, axis) {
@@ -4745,6 +4896,8 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   }
   function shapePrism(s, zr) {
     if (s.kind === 'mesh') return meshOf(s);
+    if (s.kind === 'screw') { var sm = new G.Mesh(), sg = partGroups().filter(function (g) { return g.cuts.indexOf(s) >= 0; })[0]; screwCuts(s, sg ? sg.mem : null).forEach(function (c) { sm.append(G.extrude(c.pts, [], c.z0, c.z1)); }); return sm; }
+    if (s.role === 'hole' && hasFlare(s)) { var fm = new G.Mesh(), fg = partGroups().filter(function (g) { return g.cuts.indexOf(s) >= 0; })[0]; holeCuts(s, fg ? fg.mem : null).forEach(function (c) { fm.append(G.extrude(c.pts, [], Math.max(c.z0, zr ? zr[0] - 0.4 : -50), Math.min(c.z1, zr ? zr[1] + 0.4 : 300))); }); return fm; }
     var z0 = s.z || 0, z1 = z0 + Math.max(0.2, s.h || S.T);
     if (s.role === 'hole' && s.through !== false) { z0 = zr[0] - 0.4; z1 = zr[1] + 0.4; }
     return G.extrude(outline(s), s.role === 'hole' ? [] : (s.holes || []), z0, z1);
@@ -5657,13 +5810,14 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   }
 
   /* ---------------- panels ---------------- */
-  var SHP_DEF = { edgeT: 'none', edgeTs: 2, edgeB: 'none', edgeBs: 0.6, M: 3, head: 'csk', nut: false };
+  var SHP_DEF = { edgeT: 'none', edgeTs: 2, edgeB: 'none', edgeBs: 0.6, flareT: 'none', flareTs: 1.5, flareB: 'none', flareBs: 1.5, M: 3, head: 'csk', nut: false, dir: 'down' };
   function shp(s, k) { return s[k] != null ? s[k] : SHP_DEF[k]; }
   function getPath(p) {
     if (p.indexOf('multi.') === 0) return multiGet(p.slice(6));
     if (p.indexOf('dec.') === 0) { var d0 = shapeById(S.sel); if (d0 && (p === 'dec.z0' || p === 'dec.z1')) return d0.F ? decRange(d0)[p === 'dec.z0' ? 0 : 1] : 0; return d0 ? (p === 'dec.wrap' ? d0.wrap !== false : decv(d0, p.slice(4))) : 0; }
     if (p.indexOf('cn.') === 0) { var c0 = shapeById(S.sel); if (!c0) return 0; var k0 = p.slice(3); return c0[k0] != null ? c0[k0] : CONN_DEFAULTS[c0.type][k0]; }
     if (p.indexOf('shp.') === 0) { var s3 = shapeById(S.sel); return s3 ? shp(s3, p.slice(4)) : 0; }
+    if (p.indexOf('scr.') === 0) { var s6 = shapeById(S.sel); if (!s6 || s6.kind !== 'screw') return 0; var a6 = screwAxis(s6); return p === 'scr.zc' ? Math.round(a6.zc * 100) / 100 : Math.round(a6.L * 100) / 100; }
     if (p.indexOf('sel.') === 0) {
       var s = shapeById(S.sel); if (!s) return 0;
       var k = p.slice(4), b = shapeBox(s);
@@ -5684,7 +5838,8 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       return;
     }
     if (p.indexOf('cn.') === 0) { var c1 = shapeById(S.sel); if (c1) { snapshot(); c1[p.slice(3)] = v; } return; }
-    if (p.indexOf('shp.') === 0) { var s4 = shapeById(S.sel); if (s4) { snapshot(); s4[p.slice(4)] = v; if (s4.kind === 'screw' && p === 'shp.M') { var b4 = shapeBox(s4); s4.raw = G.circlePts(b4.cx, b4.cy, SCREWS[v][0] / 2, 48); touch(s4); } } return; }
+    if (p.indexOf('shp.') === 0) { var s4 = shapeById(S.sel); if (s4) { snapshot(); s4[p.slice(4)] = v; if (s4.kind === 'screw') { if (p === 'shp.dir') placeScrew(s4, screwTarget(s4)); else if (p === 'shp.M' || p === 'shp.head' || p === 'shp.nut') refreshScrew(s4); } } return; }
+    if (p.indexOf('scr.') === 0) { var s5 = shapeById(S.sel); if (s5 && s5.kind === 'screw' && screwSide(s5)) { snapshot(); var a5 = screwAxis(s5); if (p === 'scr.zc') setScrewAxis(s5, a5.E, a5.u, a5.L, v); else if (p === 'scr.len') setScrewAxis(s5, a5.E, a5.u, Math.max(1, v), a5.zc); } return; }
     if (p.indexOf('sel.') === 0) {
       var s = shapeById(S.sel); if (!s) return;
       var k = p.slice(4), b = shapeBox(s);
@@ -5804,9 +5959,9 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       '<input type="range" id="sl-smooth" data-range="S.smooth" data-shape="1" min="0" max="100" step="1" value="' + s.smooth + '"></div>';
     var isHole = s.role === 'hole', isMesh = s.kind === 'mesh';
     if (isMesh) h += '<p class="note">' + (s.compound ? 'A combined object: its colored pieces stay together as one.' : 'Resize it, move it, add shapes to it, or put a hole shape over it to cut into it.') + '</p>' + (s.compound ? (s.orig && s.orig.length ? '<div class="btns"><button class="ghost" data-act="uncombine">Undo the combine</button></div><p class="note">Brings back the shapes it was made from, so you can change them again.</p>' : '') + '<div class="btns"><button class="ghost" data-act="split-back">Split into pieces by color</button></div>' : '');
-    if (!isMesh) h += '<div class="field"><span class="lbl">This shape is</span><div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))">' +
+    if (!isMesh || isHole || !s.compound) h += '<div class="field"><span class="lbl">This shape is</span><div class="seg" style="grid-template-columns:repeat(2,minmax(0,1fr))">' +
       '<button data-act="role-solid" class="' + (!isHole ? 'on' : '') + '">Solid</button><button data-act="role-hole" class="' + (isHole ? 'on' : '') + '">A hole</button></div>' +
-      (isHole ? '<p class="note">A hole cuts away any solid shape it overlaps.</p>' : '') + '</div>';
+      (isHole ? '<p class="note">' + (isMesh ? 'A hole cuts its exact 3D shape out of any solid it overlaps, tilt and all.' : 'A hole cuts away any solid shape it overlaps.') + '</p>' : '') + '</div>';
     if (!isHole) {
       h += '<div class="field"><div class="row"><span class="lbl">Color (filament slot)</span><button class="linkbtn" data-act="edit-colors">Edit colors</button></div><div class="swatches">' +
         S.filaments.map(function (c, i) { var on = filOf(s) === i + 1; return '<button class="sw' + (on ? ' on' : '') + '" data-fil="' + (i + 1) + '" aria-label="Filament ' + (i + 1) + '" aria-pressed="' + on + '"><span style="background:' + c + '"></span>' + (i + 1) + '</button>'; }).join('') + '</div></div>';
@@ -5830,7 +5985,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     h += '</div>';
     if (S.plates.length > 1) h += '<div class="box"><h3>Plate</h3><p class="note">Moves this whole part (everything joined to it) to another plate.</p><div class="field"><select data-moveplate="1" aria-label="Move to plate"><option value="">Move to plate…</option>' +
       S.plates.filter(function (p) { return p.id !== S.plate; }).map(function (p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('') + '</select></div></div>';
-    if (!isHole) h += '<div class="box"><h3>Screw hole</h3>' + seg('screw.M', 'Size', [['2','M2'],['2.5','M2.5'],['3','M3'],['4','M4'],['5','M5'],['6','M6'],['8','M8']]) + seg('screw.head', 'Head', [['flat', 'Plain'], ['csk', 'Countersunk'], ['cbore', 'Counterbore']]) + toggle('screw.nut', 'Hex nut pocket underneath') + '<button class="ghost" data-act="add-screw">Add screw hole</button></div>';
+    if (!isHole) h += '<div class="box"><h3>Screw hole</h3>' + seg('screw.M', 'Size', [['2','M2'],['2.5','M2.5'],['3','M3'],['4','M4'],['5','M5'],['6','M6'],['8','M8']]) + seg('screw.head', 'Head', [['flat', 'Plain'], ['csk', 'Countersunk'], ['cbore', 'Counterbore']]) + toggle('screw.nut', 'Hex nut pocket at the far end') + seg('screw.dir', 'Head on which face', [['down', 'Top'], ['up', 'Bottom'], ['front', 'Front'], ['back', 'Back'], ['left', 'Left'], ['right', 'Right']]) + '<button class="ghost" data-act="add-screw">Add screw hole</button></div>';
     h += repeatBox(s);
     if (!isHole && !isMesh) h += '<div class="box"><h3>Stand it up</h3><p class="note">Draw the side view (like a keel, fin or sign): up the screen becomes up. It gets a thickness and stands on its bottom edge.</p>' +
       stepper('stand.t', 'Thickness', 'mm', 0.5, 0.4, 100, 1) + stepper('stand.taper', 'Thickness at the bottom edge', '%', 10, 0, 100, 0) +
@@ -5842,6 +5997,12 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       h += '<div class="box"><h3>Edges</h3>' + seg('shp.edgeT', 'Top edge', EO) + (shp(s, 'edgeT') !== 'none' ? stepper('shp.edgeTs', 'Top edge size', 'mm', 0.5, 0.2, 50, 1) : '') +
         seg('shp.edgeB', 'Bottom edge', EO) + (shp(s, 'edgeB') !== 'none' ? stepper('shp.edgeBs', 'Bottom edge size', 'mm', 0.2, 0.2, 50, 1) : '') +
         '<p class="note">' + (shp(s, 'edgeB') === 'bevel' ? 'A small bottom bevel (0.4–0.8 mm) stops the first layer from bulging out.' : 'Round softens the edge; bevel cuts it at 45°. A small bottom bevel stops the first layer bulging out.') + '</p></div>';
+    }
+    if (isHole && !isMesh) {
+      var FO = [['none', 'Plain'], ['csk', 'Countersunk'], ['round', 'Rounded']];
+      h += '<div class="box"><h3>Flared edges</h3><p class="note">Widen the hole where it meets the surface, like a countersink.</p>' + seg('shp.flareT', 'Top', FO) + (shp(s, 'flareT') !== 'none' ? stepper('shp.flareTs', 'Top: wider by (each side)', 'mm', 0.5, 0.2, 20, 1) : '') +
+        seg('shp.flareB', 'Bottom', FO) + (shp(s, 'flareB') !== 'none' ? stepper('shp.flareBs', 'Bottom: wider by (each side)', 'mm', 0.5, 0.2, 20, 1) : '') +
+        '<p class="note">Countersunk is a 90° cone, the same as most flat-head screws: it goes as deep as it is wide. It starts at the surface of the part, wherever that is.</p></div>';
     }
     if (!isHole) h += '<div class="box"><h3>Knit texture (whole object)</h3><p class="note">Covers the whole object in stitches, like a knitted toy. The bottom stays smooth so it sits flat.</p>' +
       seg('knitTex.type', 'Stitch', [['knit', 'Knit'], ['ribbing', 'Ribbing']]) + stepper('knitTex.cell', 'Stitch size', 'mm', 0.5, 2, 15, 1) + stepper('knitTex.depth', 'Depth', 'mm', 0.1, 0.2, 2, 1) +
@@ -5927,9 +6088,12 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     h += '<div class="field"><label class="lbl" for="objname">Name</label><input type="text" id="objname" class="txt" data-name="1" maxlength="40" value="' + esc(s.name || '') + '" placeholder="Screw hole" autocomplete="off"></div>';
     h += seg('shp.M', 'Screw size', [['2','M2'],['2.5','M2.5'],['3','M3'],['4','M4'],['5','M5'],['6','M6'],['8','M8']]);
     h += seg('shp.head', 'Head', [['flat', 'Plain'], ['csk', 'Countersunk'], ['cbore', 'Counterbore']]);
-    h += toggle('shp.nut', 'Hex nut pocket underneath');
-    h += '<p class="note">Hole ' + fmt(T[0], 1) + ' mm' + (shp(s, 'head') === 'csk' ? ', countersink ' + fmt(T[1], 1) + ' mm' : shp(s, 'head') === 'cbore' ? ', head pocket ' + fmt(T[2], 1) + ' mm × ' + fmt(T[3], 1) + ' deep' : '') + (shp(s, 'nut') ? ', nut pocket ' + fmt(T[4] + 0.3, 1) + ' mm across flats' : '') + '. The head is at the top; the nut goes in from the bottom.</p>';
-    h += '<div class="box"><h3>Height</h3>' + stepper('sel.z', 'Bottom of the hole', 'mm', 0.5, 0, 255, 1) + stepper('sel.h', 'Length', 'mm', 0.5, 0.4, 256, 1) + '<p class="note">Set these to match the part, so the head sits at its top.</p></div>';
+    h += seg('shp.dir', 'Head on which face', [['down', 'Top'], ['up', 'Bottom'], ['front', 'Front'], ['back', 'Back'], ['left', 'Left'], ['right', 'Right']]);
+    h += toggle('shp.nut', 'Hex nut pocket at the far end');
+    var side = screwSide(s), far = { down: 'bottom', up: 'top', front: 'back', back: 'front', left: 'right', right: 'left' }[shp(s, 'dir')] || 'bottom', near = { down: 'top', up: 'bottom' }[shp(s, 'dir')] || shp(s, 'dir');
+    h += '<p class="note">Hole ' + fmt(T[0], 1) + ' mm' + (shp(s, 'head') === 'csk' ? ', countersink ' + fmt(T[1], 1) + ' mm' : shp(s, 'head') === 'cbore' ? ', head pocket ' + fmt(T[2], 1) + ' mm × ' + fmt(T[3], 1) + ' deep' : '') + (shp(s, 'nut') ? ', nut pocket ' + fmt(T[4] + 0.3, 1) + ' mm across flats' : '') + '. The head is on the ' + near + (side ? ' face' : '') + '; the nut goes in from the ' + far + '.' + (side ? ' Sideways holes print fine up to about M5 without supports.' : '') + '</p>';
+    if (side) h += '<div class="box"><h3>Height and depth</h3>' + stepper('scr.zc', 'Height of the hole center', 'mm', 0.5, 0, 255, 1) + stepper('scr.len', 'Length (in from the ' + near + ')', 'mm', 0.5, 1, 300, 1) + '<p class="note">Changing the face puts it back at the middle of the part it sits in.</p></div>';
+    else h += '<div class="box"><h3>Height</h3>' + stepper('sel.z', 'Bottom of the hole', 'mm', 0.5, 0, 255, 1) + stepper('sel.h', 'Length', 'mm', 0.5, 0.4, 256, 1) + '<p class="note">The head always sits on the part\'s ' + near + ' surface, even if you change the part\'s height later.</p></div>';
     h += '<div class="box"><h3>Position <span class="note" style="font-weight:400">(center)</span></h3>' + stepper('sel.cx', 'X', 'mm', 1, -300, 300, 1) + stepper('sel.cy', 'Y', 'mm', 1, -300, 300, 1) + '</div>';
     h += repeatBox(s);
     h += '<div class="btns"><button class="ghost" data-act="view3d">' + (S.view3d ? 'Back to drawing' : 'See in 3D') + '</button></div>';
@@ -6164,7 +6328,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   function afterField(path) {
     if (path.indexOf('cut.') === 0) { if (S.view3d) draw3d(true); var ci = document.querySelector('[data-range="cut.pos"]'); if (ci && path !== 'cut.pos-live') ci.value = S.cut.pos; var cn = document.querySelector('[data-num="cut.pos"]'); if (cn) cn.value = fmt(S.cut.pos, 1); return; }
     if (path.indexOf('cn.') === 0) { var cc = shapeById(S.sel); if (cc && cc.kind === 'conn') { var cg = connGeom(cc); if (cg.move) moveObj(shapeById(cc.b), cg.move); } changed(true); return; }
-    if (path.indexOf('sel.') === 0 || path.indexOf('shp.') === 0 || path.indexOf('dec.') === 0 || path.indexOf('multi.') === 0) { changed(true); return; }
+    if (path.indexOf('sel.') === 0 || path.indexOf('shp.') === 0 || path.indexOf('scr.') === 0 || path.indexOf('dec.') === 0 || path.indexOf('multi.') === 0) { changed(true); return; }
     if (path.indexOf('hinge.') === 0) { if (path !== 'hinge.angle') hingeCache = null; persist(); update3d(true); return; }
     if (path.indexOf('trace.') === 0) { runTrace(); return; }
     if (path.indexOf('inlay.') === 0) { persist(); render2d(); update3dIfNeeded(); return; }
@@ -6219,7 +6383,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       case 'shrink': case 'grow': if (s) { snapshot(); scaleShape(s, a === 'grow' ? 1.1 : 1 / 1.1); changed(true); } break;
       case 'rotL': case 'rotR': if (s) { snapshot(); rotateShape(s, a === 'rotL' ? 15 : -15); changed(true); } break;
       case 'flip': if (s) { snapshot(); flipShape(s); changed(true); } break;
-      case 'role-solid': case 'role-hole': if (s) { snapshot(); s.role = a === 'role-hole' ? 'hole' : 'solid'; if (s.role === 'hole') s.through = true; changed(true); } break;
+      case 'role-solid': case 'role-hole': if (s) { snapshot(); s.role = a === 'role-hole' ? 'hole' : 'solid'; if (s.role === 'hole') s.through = s.kind !== 'mesh'; changed(true); } break;
       case 'hollow': if (s) hollow(s); break;
       case 'hollow-mesh': if (s && s.kind === 'mesh') hollowMesh(s); break;
       case 'make-lid': if (s) makeLid(s); break;

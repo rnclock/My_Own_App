@@ -1,6 +1,6 @@
 # PrintSketch user guide
 
-**Version 1.22.** Tap **?** in the app to see which version you have.
+**Version 1.23.** Tap **?** in the app to see which version you have.
 
 ## Installing PrintSketch
 
@@ -133,6 +133,10 @@ For **Circle**, put one copy where you want it first; the copies turn around the
 
 Each shape keeps its own height, so a hole never changes the part it cuts into. A hole over an imported model cuts into that model too.
 
+**Flared (countersunk) holes.** A selected hole has a **Flared edges** box. Set **Top** and/or **Bottom** to **Countersunk** (a 90° cone, like a flat-head screw) or **Rounded**, and set how much **wider** it gets at the surface on each side. The flare always starts at the part's actual surface. It works on drawn holes of any shape, including **+ Cylinder**.
+
+**Tilted or 3D holes.** A tilted or turned object, or an imported model, can also be set to **A hole**. It cuts its exact 3D shape, so a tilted cylinder makes a slanted hole, and it only cuts within its own height. A hollow object (like a tube) cuts as if it were solid. Combined objects can't be holes; ungroup them first.
+
 **Make it a box**
 
 1. Select a drawn part and find **Make it a box** in the panel.
@@ -167,7 +171,10 @@ With both pieces kept, each becomes its own object, moved apart a little; a flat
 2. Turn on **Click-in** if you want a small bump on the lip that clicks into a groove in the box.
 3. Tap **Make the lid**. It appears beside the box, upside down and ready to print, as a group named after the box.
 
-**Screw holes.** In a part's panel, **Screw hole**: pick **M2** to **M8**, a **Head** (**Plain**, **Countersunk** or **Counterbore**), and optionally a **Hex nut pocket underneath**. Tap **Add screw hole**; it lands in the middle, then drag it into place. The head is at the top and the nut goes in from the bottom. If you change the part's height, set the hole's **Bottom of the hole** and **Length** to match.
+**Screw holes.** In a part's panel, **Screw hole**: pick **M2** to **M8**, a **Head** (**Plain**, **Countersunk** or **Counterbore**), optionally a **Hex nut pocket at the far end**, and **Head on which face**: **Top**, **Bottom**, **Front**, **Back**, **Left** or **Right**. Tap **Add screw hole**.
+
+- **Top or Bottom:** it lands in the middle; drag it into place. The head always sits on the part's real top (or bottom) surface, even on rounded parts or after you change the part's height.
+- **Front, Back, Left or Right:** the hole runs sideways, level with the plate, from that face into the part. It starts centered and half way up. Set **Height of the hole center** and **Length** in its panel, and drag it along the face to move it. Changing the face puts it back in the middle of the part. Sideways holes print without supports up to about M5.
 
 **Screw-top jar.** Tap **+ Jar** in 3D (or **Make a screw-top jar** with nothing selected). Set **Inside diameter**, **Inside height**, **Wall thickness**, **Thread pitch** and **Thread gap**, then **Make the jar**. You get the jar and a ridged cap. The cap prints top-down; flip it over to screw it on. Don't resize the jar or cap afterward, or the threads won't match; make a new one instead.
 
