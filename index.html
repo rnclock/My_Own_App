@@ -2685,7 +2685,7 @@ var G = (function () {
     rectPts: rectPts, circlePts: circlePts, roundRectPts: roundRectPts, transformPts: transformPts,
     Mesh: Mesh, extrude: extrude, box: box, xCylinder: xCylinder, checkClosed: checkClosed, signedVolume: signedVolume,
     plainPart: plainPart, inlayParts: inlayParts, hingeBox: hingeBox, hingeBoxParams: hingeBoxParams, lidRotate: lidRotate,
-    traceMask: traceMask, strokeRegions: strokeRegions, patternRegions: patternRegions, PATTERNS: PATTERNS, unionRegions: unionRegions, layeredPart: layeredPart, meshAndPrism: meshAndPrism, clipMeshAxis: clipMeshAxis, cutRegion: cutRegion, connFrame: connFrame, placeMesh: placeMesh, hingeParts: hingeParts, dovetailShapes: dovetailShapes, rayMesh: rayMesh, surfaceFrame: surfaceFrame, surfaceInlay: surfaceInlay, surfaceInlayWrap: surfaceInlayWrap, localCut: localCut, closeTJunctions: closeTJunctions, boxCut: boxCut, projectedInlay: projectedInlay, imprintInlay: imprintInlay, closedByIndex: closedByIndex, aroundInfo: aroundInfo, surfaceInlayAround: surfaceInlayAround, decodePaint: decodePaint, encodePaint: encodePaint, subdivideX: subdivideX, toFrame: toFrame, fromFrame: fromFrame, parseSTL: parseSTL, parse3MF: parse3MF, readZip: readZip, silhouette: silhouette, sliceMesh: sliceMesh, clipMesh: clipMesh, clipToPlate: clipToPlate, cutMesh: cutMesh, meshFlipWinding: meshFlipWinding, insetRegion: insetRegion, insetLevels: insetLevels, outsetRegion: outsetRegion, threadedJar: threadedJar, lathe: lathe, loft: loft, resampleRing: resampleRing, alignRing: alignRing, cupSolid: cupSolid, edgeSlabs: edgeSlabs, isConvex: isConvex, stlBinary: stlBinary, threeMF: threeMF, zip: zip, crc32: crc32
+    traceMask: traceMask, strokeRegions: strokeRegions, patternRegions: patternRegions, PATTERNS: PATTERNS, unionRegions: unionRegions, layeredPart: layeredPart, meshAndPrism: meshAndPrism, clipMeshAxis: clipMeshAxis, cutRegion: cutRegion, connFrame: connFrame, placeMesh: placeMesh, hingeParts: hingeParts, dovetailShapes: dovetailShapes, rayMesh: rayMesh, surfaceFrame: surfaceFrame, surfaceInlay: surfaceInlay, surfaceInlayWrap: surfaceInlayWrap, localCut: localCut, closeTJunctions: closeTJunctions, boxCut: boxCut, projectedInlay: projectedInlay, imprintInlay: imprintInlay, closedByIndex: closedByIndex, aroundInfo: aroundInfo, surfaceInlayAround: surfaceInlayAround, decodePaint: decodePaint, encodePaint: encodePaint, subdivideX: subdivideX, toFrame: toFrame, fromFrame: fromFrame, parseSTL: parseSTL, parse3MF: parse3MF, readZip: readZip, inflateRaw: inflateRaw, silhouette: silhouette, sliceMesh: sliceMesh, clipMesh: clipMesh, clipToPlate: clipToPlate, cutMesh: cutMesh, meshFlipWinding: meshFlipWinding, insetRegion: insetRegion, insetLevels: insetLevels, outsetRegion: outsetRegion, threadedJar: threadedJar, lathe: lathe, loft: loft, resampleRing: resampleRing, alignRing: alignRing, cupSolid: cupSolid, edgeSlabs: edgeSlabs, isConvex: isConvex, stlBinary: stlBinary, threeMF: threeMF, zip: zip, crc32: crc32
   };
 })();
 if (typeof module !== 'undefined') module.exports = G;
@@ -2987,7 +2987,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.21.2';
+  var VERSION = '1.22';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }
@@ -4417,7 +4417,10 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     conns.forEach(function (c) {
       var g = connGeom(c), oa = objs[c.a], ob = objs[c.b];
       if (g.tabs && g.tabs.length) { // dovetails only where both pieces have material
-        var both = new G.Mesh(); both.append(oa.mesh); both.append(ob.mesh);
+        // the second piece sits a small fit gap away: close that gap for this test, so the tab is one solid piece joined to the first
+        var obc = ob.mesh;
+        if (g.need && g.F) { var q0 = g.F.w(0, 0), q1 = g.F.w(0, 1), gx = (q1[0] - q0[0]) * g.need, gy = (q1[1] - q0[1]) * g.need; obc = ob.mesh.clone().transform(function (x, y, z) { return [x + gx, y + gy, z]; }); }
+        var both = new G.Mesh(); both.append(oa.mesh); both.append(obc);
         var full = 0, got = 0;
         g.tabs.forEach(function (t) { var tm = G.meshAndPrism(both, t); got += G.signedVolume(tm); full += Math.abs(G.polyArea(t)) * Math.max(objTop(shapeById(c.a)), objTop(shapeById(c.b))); oa.extra.push({ fil: oa.fil, mesh: tm }); });
         c._thin = full > 0 && got / full < 0.35;
@@ -6560,6 +6563,88 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
   function openProjectFile(file) {
     file.text().then(function (t) { loadProject(JSON.parse(t)); }).catch(function (err) { toast('Could not open that project: ' + (err && err.message ? err.message : err), 6000); });
   }
+  /* ---------------- My projects (kept in the app on this device), and a backup of everything ---------------- */
+  function idbAll(prefix) {
+    return idb().then(function (db) { return new Promise(function (ok) { var out = [], rq = db.transaction('kv').objectStore('kv').openCursor(); rq.onsuccess = function () { var cu = rq.result; if (!cu) return ok(out); if (typeof cu.key === 'string' && cu.key.indexOf(prefix) === 0 && cu.value) out.push(cu.value); cu.continue(); }; rq.onerror = function () { ok(out); }; }); });
+  }
+  function keepProject() {
+    var d = projectData(), name = d.name;
+    return idbKey('proj:' + name, { name: name, date: d.savedAt, data: JSON.stringify(d) }).then(function () { toast('Kept \u201c' + name + '\u201d in My projects on this device.', 4000); })
+      .catch(function () { toast('Not enough room on this device to keep that project. Save it as a file instead.', 6000); });
+  }
+  function myProjectsDialog() {
+    var m = $('#modal');
+    idbAll('proj:').then(function (list) {
+      list.sort(function (a, b) { return (b.date || '').localeCompare(a.date || ''); });
+      m.innerHTML = '<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="mpt"><h2 id="mpt">My projects</h2>' +
+        (list.length ? '<div class="liblist">' + list.map(function (it, i) { return '<div class="libitem"><div><b>' + esc(it.name) + '</b><span class="note"> · ' + (it.date ? new Date(it.date).toLocaleString() : '') + ' · ' + Math.max(1, Math.round(it.data.length / 1e5) / 10) + ' MB</span></div><div class="btns" style="margin:0"><button class="primary" data-mpopen="' + i + '">Open</button><button class="ghost" data-mpdel="' + i + '" aria-label="Delete ' + esc(it.name) + '">Delete</button></div></div>'; }).join('') + '</div>'
+          : '<p class="note">No projects kept yet. Use <b>Keep in My projects</b> in the Project menu to keep the one on screen.</p>') +
+        '<p class="note">These stay in the app on this device. <b>Back up everything</b> takes them all to another device in one file.</p>' +
+        '<div class="btns"><button class="ghost" id="mpClose">Close</button></div></div>';
+      m.classList.add('show');
+      m.querySelectorAll('[data-mpopen]').forEach(function (b) { b.onclick = function () {
+        var it = list[+b.getAttribute('data-mpopen')]; m.classList.remove('show');
+        var go = function () { try { loadProject(JSON.parse(it.data)); } catch (e) { toast('Could not open that project.'); } };
+        if (S.shapes.length) confirmBox('Opening a project replaces what is on screen now. Keep or save your current work first if you want it.', go, 'Open anyway'); else go();
+      }; });
+      m.querySelectorAll('[data-mpdel]').forEach(function (b) { b.onclick = function () {
+        var it = list[+b.getAttribute('data-mpdel')];
+        confirmBox('Delete \u201c' + it.name + '\u201d from My projects on this device?', function () { idbKey('proj:' + it.name).then(myProjectsDialog); }, 'Delete');
+      }; });
+      $('#mpClose').onclick = function () { m.classList.remove('show'); };
+    });
+  }
+  var BACKUP_SETTINGS = ['handles', 'snap', 'fingerDraw', 'lock', 'wall', 'floorT', 'openLine', 'lineW', 'T', 'knitTex', 'seam', 'tiltStep', 'filaments'];
+  function backupAll() {
+    toast('Packing up everything\u2026', 3000);
+    Promise.all([idbAll('proj:'), idbAll('font:')]).then(function (r) {
+      var projs = r[0], fonts = r[1], files = [], used = {};
+      var uniq = function (base, ext) { var n = base, k = 2; while (used[n + ext]) n = base + '-' + k++; used[n + ext] = 1; return n + ext; };
+      if (S.shapes.length) files.push({ name: 'current/' + uniq(safeName(S.projectName), '.printsketch.json'), data: JSON.stringify(projectData()) });
+      projs.forEach(function (p) { files.push({ name: 'projects/' + uniq(safeName(p.name), '.printsketch.json'), data: p.data }); });
+      files.push({ name: 'my-parts.json', data: JSON.stringify(libLoad()) });
+      fonts.forEach(function (f, i) { files.push({ name: 'fonts/' + i + '.font', data: new Uint8Array(f.data) }); });
+      var st = {}; BACKUP_SETTINGS.forEach(function (k) { st[k] = S[k]; });
+      try { st.localFonts = JSON.parse(localStorage.getItem('printsketch-localfonts') || '[]'); } catch (e) { }
+      files.push({ name: 'settings.json', data: JSON.stringify(st) });
+      var info = { app: 'PrintSketch', kind: 'backup', version: VERSION, savedAt: new Date().toISOString(), projects: projs.length + (S.shapes.length ? 1 : 0), parts: libLoad().length, fonts: fonts.map(function (f) { return f.name; }) };
+      files.unshift({ name: 'backup.json', data: JSON.stringify(info) });
+      var z = G.zip(files), name = 'PrintSketch-backup-' + new Date().toISOString().slice(0, 10) + '.zip';
+      var msg = 'Backed up ' + info.projects + ' project' + (info.projects === 1 ? '' : 's') + ', ' + info.parts + ' saved part' + (info.parts === 1 ? '' : 's') + ' and ' + fonts.length + ' font' + (fonts.length === 1 ? '' : 's') + '. Open it on the other device with Project \u2192 Restore a backup.';
+      if (DL) DL.save({ filename: name, data: z }).then(function () { toast(msg, 8000); }).catch(function (e) { if (e && e.code !== 'declined') toast('Could not save: ' + (e.message || e.code)); });
+      else { blobDownload(name, z); toast(msg, 8000); }
+    }).catch(function () { toast('Could not make the backup.', 5000); });
+  }
+  function restoreBackup(file) {
+    file.arrayBuffer().then(function (buf) {
+      var entries = G.readZip(new Uint8Array(buf));
+      return Promise.all(entries.map(function (e) { return (e.method === 8 ? G.inflateRaw(e.data) : Promise.resolve(e.data)).then(function (d) { return { name: e.name, data: d }; }); }));
+    }).then(function (files) {
+      var get = function (n) { return files.filter(function (f) { return f.name === n; })[0]; }, txt = function (f) { return new TextDecoder().decode(f.data); };
+      var info = get('backup.json'); if (!info || JSON.parse(txt(info)).app !== 'PrintSketch') throw new Error('This is not a PrintSketch backup.');
+      var cur = files.filter(function (f) { return f.name.indexOf('current/') === 0; })[0];
+      var projs = files.filter(function (f) { return f.name.indexOf('projects/') === 0; }), fonts = files.filter(function (f) { return f.name.indexOf('fonts/') === 0; });
+      var go = function () {
+        var jobs = [];
+        projs.concat(cur ? [cur] : []).forEach(function (f) { try { var d = JSON.parse(txt(f)); jobs.push(idbKey('proj:' + (d.name || 'my-project'), { name: d.name || 'my-project', date: d.savedAt, data: txt(f) })); } catch (e) { } });
+        var parts = get('my-parts.json'), added = 0;
+        if (parts) { try { var have = libLoad(), key = function (x) { return x.name + '|' + x.date; }, seen = {}; have.forEach(function (x) { seen[key(x)] = 1; }); JSON.parse(txt(parts)).forEach(function (x) { if (!seen[key(x)]) { have.push(x); added++; } }); libStore(have); } catch (e) { } }
+        var fnames = JSON.parse(txt(info)).fonts || [];
+        fonts.forEach(function (f) {
+          var idx = +f.name.slice(6).replace(/\.font$/, ''), nm = fnames[idx] || ('Font ' + (idx + 1)), data = f.data.slice().buffer;
+          jobs.push(idbKey('font:' + nm, { name: nm, data: data }));
+        });
+        var st = get('settings.json');
+        if (st) { try { var o = JSON.parse(txt(st)); BACKUP_SETTINGS.forEach(function (k) { if (o[k] != null) S[k] = o[k]; }); if (o.localFonts) localStorage.setItem('printsketch-localfonts', JSON.stringify(o.localFonts)); } catch (e) { } }
+        Promise.all(jobs).then(loadMyFonts).then(function () {
+          if (cur) { try { loadProject(JSON.parse(txt(cur))); } catch (e) { } } else { persist(); renderPanel(); }
+          toast('Restored ' + (projs.length + (cur ? 1 : 0)) + ' project' + (projs.length + (cur ? 1 : 0) === 1 ? '' : 's') + ' (in My projects' + (cur ? ', and the one you were working on is open' : '') + '), ' + added + ' saved part' + (added === 1 ? '' : 's') + ' and ' + fonts.length + ' font' + (fonts.length === 1 ? '' : 's') + '.', 8000);
+        });
+      };
+      if (cur && S.shapes.length) confirmBox('Restoring opens the project you were working on when you made the backup, replacing what is on screen now. Keep or save your current work first if you want it. Everything else is added alongside what you have.', go, 'Restore');
+      else go();
+    }).catch(function (err) { toast('Could not restore that backup: ' + (err && err.message ? err.message : err), 6000); });
+  }
   function projectMenu() {
     var m = $('#modal');
     m.innerHTML = '<div class="dialog" role="dialog" aria-modal="true" aria-labelledby="pjt"><h2 id="pjt">Project</h2>' +
@@ -6567,7 +6652,10 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
       '<div class="field"><label class="lbl" for="pjname">Project name</label><input type="text" id="pjname" class="txt" maxlength="40" value="' + esc(S.projectName || 'my-project') + '" autocomplete="off"></div>' +
       '<div class="btns"><button class="primary" id="pjSave">Save project</button></div>' +
       '<div class="btns"><button class="ghost" id="pjLib">My parts…</button></div>' +
+      '<div class="btns"><button class="ghost" id="pjKeep">Keep in My projects</button><button class="ghost" id="pjMine">My projects…</button></div>' +
       '<div class="btns"><button class="ghost" id="pjOpen">Open project…</button><button class="danger" id="pjNew">New project</button></div>' +
+      '<h3 style="margin:14px 0 6px">Moving to another device</h3><p class="note">One file with your current work, My projects, My parts, your added fonts and your colors and settings.</p>' +
+      '<div class="btns"><button class="ghost" id="pjBackup">Back up everything</button><button class="ghost" id="pjRestore">Restore a backup…</button></div>' +
       '<div class="btns"><button class="ghost" id="pjClose">Close</button></div></div>';
     m.classList.add('show');
     var nameIn = $('#pjname');
@@ -6586,6 +6674,10 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     };
     $('#pjClose').onclick = function () { m.classList.remove('show'); };
     $('#pjLib').onclick = function () { m.classList.remove('show'); libraryDialog(); };
+    $('#pjKeep').onclick = function () { S.projectName = nameIn.value.trim() || 'my-project'; m.classList.remove('show'); keepProject(); };
+    $('#pjMine').onclick = function () { m.classList.remove('show'); myProjectsDialog(); };
+    $('#pjBackup').onclick = function () { m.classList.remove('show'); backupAll(); };
+    $('#pjRestore').onclick = function () { m.classList.remove('show'); var inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.zip,application/zip'; inp.onchange = function () { if (inp.files[0]) restoreBackup(inp.files[0]); }; inp.click(); };
   }
   $('#projBtn').addEventListener('click', projectMenu);
   $('#fileProj').addEventListener('change', function (e) { var f = e.target.files[0]; if (f) openProjectFile(f); e.target.value = ''; });

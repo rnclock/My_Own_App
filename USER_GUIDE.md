@@ -1,6 +1,6 @@
 # PrintSketch user guide
 
-**Version 1.21.2.** Tap **?** in the app to see which version you have.
+**Version 1.22.** Tap **?** in the app to see which version you have.
 
 ## Installing PrintSketch
 
@@ -398,6 +398,15 @@ There are two kinds of saving. A **project** is your work in progress; a **print
 - Tap **Project** at the top, give it a **Project name** and tap **Save project**. You get a `name.printsketch.json` file with every object, name, hole, color, plate and setting.
 - **Open project…** loads one back, on the tablet or the PC. It replaces what's on screen, so save first.
 - **New project** clears the screen to start over.
+- **Keep in My projects** keeps the project on screen inside the app on this device, under its name (keeping it again with the same name updates it). **My projects…** lists them with **Open** and **Delete**.
+
+**Moving everything to another device**
+
+1. In **Project**, tap **Back up everything**. You get one `PrintSketch-backup-date.zip` with the project on screen, all of **My projects**, **My parts**, the fonts you added, and your colors and settings.
+2. Copy the zip to the other device (Google Drive, email, a USB cable).
+3. There, tap **Project → Restore a backup…** and pick the zip.
+
+Restoring mostly adds: projects go into **My projects** (one with the same name is replaced), saved parts and fonts are added. Two things are replaced: the project on screen (it asks first if you have work open) and your colors and settings.
 
 **Print files (for Bambu Studio)**
 
