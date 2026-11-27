@@ -1767,13 +1767,18 @@ var G = (function () {
           res.forEach(function (r) {
             var rb = bbox([r.outer]);
             if (cb.maxX < rb.minX || cb.minX > rb.maxX || cb.maxY < rb.minY || cb.minY > rb.maxY) return;
-            if (ringInside(c, r.outer) && !r.holes.some(function (h) { return polysIntersect(h, c) || pointInPoly(h[0][0], h[0][1], c) || pointInPoly(c[0][0], c[0][1], h); })) { r.holes.push(c); hit = true; }
+            if (ringInside(c, r.outer)) {
+              // a cut that overlaps or surrounds a hole already there (a countersink around its hole) needs the full merge
+              if (r.holes.some(function (h) { return polysIntersect(h, c) || pointInPoly(h[0][0], h[0][1], c) || pointInPoly(c[0][0], c[0][1], h); })) ok = false;
+              else { r.holes.push(c); hit = true; }
+            }
             else if (polysIntersect(c, r.outer) || pointInPoly(r.outer[0][0], r.outer[0][1], c)) ok = false;
           });
         });
         regs = ok ? res : unionRegions(sec, act);
       }
-      var sig = regs.length + ':' + regs.map(function (r) { return r.outer.length + '/' + r.holes.length + '/' + r.outer.slice(0, 4).map(function (p) { return Math.round(p[0] * 1000) + ',' + Math.round(p[1] * 1000); }).join(';'); }).join('|');
+      var rsig = function (ring) { var q = bbox([ring]); return ring.length + '/' + [q.minX, q.minY, q.maxX, q.maxY].map(function (x) { return Math.round(x * 1000); }).join(','); };
+      var sig = regs.length + ':' + regs.map(function (r) { return r.outer.length + '/' + r.holes.length + '/' + r.outer.slice(0, 4).map(function (p) { return Math.round(p[0] * 1000) + ',' + Math.round(p[1] * 1000); }).join(';') + '/' + r.holes.map(rsig).join(';'); }).join('|');
       if (prev && prev.sig === sig) { prev.b = bz; continue; }
       if (prev) prev.regs.forEach(function (r) { out.append(extrude(r.outer, r.holes, prev.a, prev.b)); });
       prev = { sig: sig, regs: regs, a: a, b: bz };
@@ -2987,7 +2992,7 @@ function norm(a) { var l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, 
     inlay: { base: 'plate', baseId: null, plate: { w: 80, h: 50, r: 6 }, src: 'text', srcId: null, text: 'HELLO', w: 56, rot: 0, x: 0, y: 0, T: 4, mode: 'flush', layers: 3, colA: '#9aa0aa', colB: '#f5a04a' },
     hinge: { W: 80, D: 50, H: 30, wall: 2, corner: 3, type: 'pip', knuckles: 5, clr: 0.3, pin: 'fil', pinD: 1.75, lip: true, angle: 0 }
   };
-  var VERSION = '1.23';
+  var VERSION = '1.23.1';
   var undoStack = [];
   function load() {
     try { applySaved(JSON.parse(localStorage.getItem('printsketch-v1') || 'null')); } catch (e) { }

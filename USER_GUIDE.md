@@ -1,6 +1,6 @@
 # PrintSketch user guide
 
-**Version 1.23.** Tap **?** in the app to see which version you have.
+**Version 1.23.1.** Tap **?** in the app to see which version you have.
 
 ## Installing PrintSketch
 
